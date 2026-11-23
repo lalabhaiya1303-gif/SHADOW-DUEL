@@ -15,6 +15,7 @@
 </head>
 <body>
 <canvas id="game"></canvas>
+<script src="assets/sfx/manifest.js"></script>  <!-- optional real sound files (see that file) -->
 <script>
 "use strict";
 
@@ -206,6 +207,7 @@ function loadSave() {
   try { s = Object.assign(def, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); }
   catch (e) { s = def; }
   s.custom = Object.assign({ band: 0, head: 0, outfit: 0, aura: 0 }, s.custom || {});   // Veer customization
+  s.vol = Object.assign({ music: 0.7, sfx: 0.8 }, s.vol || {});                         // MUSIC / SFX volume
   return s;
 }
 function writeSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* storage blocked */ } }
@@ -214,65 +216,497 @@ const save = loadSave();   // best: highest opponent index reached (3 = beat the
 /* =========================================================================
    4. SOUND  (Web Audio only, everything synthesized)
    ========================================================================= */
-const STORY_MELODY = [                    // slow, sad flute for cutscenes
-  [0, 'A4', 6], [6, 'G4', 2], [8, 'E4', 6], [14, 'D4', 2], [16, 'C5', 5], [21, 'A4', 3], [24, 'G4', 4], [28, 'E4', 4],
-];
-const NOTE = { C4: 261.63, D4: 293.66, E4: 329.63, G4: 392, A4: 440, C5: 523.25, D5: 587.33, E5: 659.25, G5: 783.99, A5: 880 };
-const MUSIC_STEP = 60 / 84 / 2;          // eighth notes at 84 BPM
-const DON = [0, 6, 8, 12, 14];           // big taiko hits (16-step bar)
-const KA = [4, 10, 15];                  // rim clicks
-const MELODY = [                          // [step, note, length in steps] over 32 steps
-  [0, 'E5', 3], [3, 'D5', 1], [4, 'C5', 2], [6, 'A4', 2], [8, 'C5', 3], [11, 'D5', 1], [12, 'E5', 4],
-  [16, 'G5', 3], [19, 'E5', 1], [20, 'D5', 2], [22, 'C5', 2], [24, 'D5', 3], [27, 'C5', 1], [28, 'A4', 4],
-];
+/* ---- Phase 11 sound engine ----
+   Everything is synthesized with Web Audio by default. Optional real files in assets/sfx/
+   (slash, slash_heavy, hit, hit_heavy, clash, perfect, bell, dhol, boom, music_menu, music_fight,
+   music_boss, music_story — .mp3) replace the synth version when present; missing files are ignored.
+   Buses: tracks -> musicFade (story level) -> musicDuck -> musicVol -> master
+          sfx -> sfxVol -> master;  ambience -> ambVol -> master;  reverb send -> convolver -> master */
+const SFX_FILES = ['slash', 'slash_heavy', 'hit', 'hit_heavy', 'clash', 'perfect', 'bell', 'dhol', 'boom'];
+const MUSIC_FILES = { menu: 'music_menu', fight: 'music_fight', boss: 'music_boss', story: 'music_story' };
+
+// Raga Bhairavi with Sa = D (S r g m P d n — komal re, ga, dha, ni)
+const SA = 146.83;
+const RAGA = { S: 1, r: 16 / 15, g: 6 / 5, m: 4 / 3, P: 3 / 2, d: 8 / 5, n: 9 / 5 };
+const swara = n => SA * 2 * RAGA[n[0]] * (n.includes("'") ? 2 : n.includes('.') ? 0.5 : 1);   // flute octave
+const PHRASES = {                                   // [step, swara, length in 8th-note steps] over 32 steps
+  menu: [
+    [[0, 'S', 4], [4, 'r', 2], [6, 'g', 2], [8, 'm', 4], [12, 'g', 2], [14, 'r', 2], [16, 'S', 6], [24, 'n.', 2], [26, 'S', 6]],
+    [[0, 'P', 4], [4, 'd', 2], [6, 'n', 2], [8, "S'", 6], [14, 'n', 2], [16, 'd', 4], [20, 'P', 2], [22, 'm', 2], [24, 'g', 4], [28, 'r', 2], [30, 'S', 2]],
+  ],
+  fight: [
+    [[0, 'P', 2], [2, 'd', 1], [3, 'P', 1], [4, 'm', 2], [6, 'g', 2], [8, 'm', 2], [10, 'P', 2], [12, 'd', 3], [15, 'n', 1], [16, "S'", 3], [19, 'n', 1], [20, 'd', 2], [22, 'P', 2], [24, 'm', 2], [26, 'g', 2], [28, 'r', 2], [30, 'S', 2]],
+    [[0, 'S', 1], [1, 'r', 1], [2, 'g', 2], [4, 'm', 2], [6, 'P', 2], [8, 'd', 1], [9, 'P', 1], [10, 'm', 2], [12, 'g', 4], [16, 'm', 2], [18, 'P', 2], [20, 'n', 2], [22, 'd', 2], [24, 'P', 4], [28, 'm', 2], [30, 'g', 2]],
+  ],
+  story: [
+    [[0, 'S', 8], [8, 'r', 4], [12, 'S', 4], [16, 'n.', 6], [22, 'd.', 2], [24, 'n.', 8]],
+    [[0, 'g', 6], [6, 'r', 2], [8, 'S', 8], [16, 'd.', 4], [20, 'n.', 4], [24, 'S', 8]],
+  ],
+};
+PHRASES.boss = PHRASES.fight;
+const TABLA = ['dha', 'dhin', 'dhin', 'dha', 'dha', 'dhin', 'dhin', 'dha', 'dha', 'tin', 'tin', 'na', 'na', 'dhin', 'dhin', 'dha'];   // teentaal
+const BOSS_DHOL = [0, 3, 6, 8, 10, 12, 14];
+const TRACKS = {
+  menu:  { bpm: 60,  tabla: false, flute: 0.065, drone: 0.05 },
+  fight: { bpm: 104, tabla: true,  flute: 0.05,  drone: 0.035 },
+  boss:  { bpm: 126, tabla: true,  flute: 0.05,  drone: 0.04, dhol: true },
+  story: { bpm: 52,  tabla: false, flute: 0.05,  drone: 0.04 },
+};
+const vr = (a = 0.08) => 1 + (Math.random() * 2 - 1) * a;   // random variation
 
 const Sound = {
-  ctx: null, muted: save.muted,
+  ctx: null, muted: save.muted, pitch: 1, voices: {}, files: {}, musicFiles: {},
+  track: null, wantTrack: 'menu', musicLevel: 1, ambKind: null,
   init() {
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     const c = this.ctx = new AC();
-    this.comp = c.createDynamicsCompressor();
-    this.comp.connect(c.destination);
+    this.comp = c.createDynamicsCompressor(); this.comp.connect(c.destination);
     this.master = c.createGain(); this.master.gain.value = this.muted ? 0 : 0.9; this.master.connect(this.comp);
-    this.sfx = c.createGain(); this.sfx.gain.value = 0.9; this.sfx.connect(this.master);
-    this.music = c.createGain(); this.music.gain.value = 0.28; this.music.connect(this.master);
-    // simple echo for the flute
-    this.echo = c.createDelay(1); this.echo.delayTime.value = MUSIC_STEP;
-    const fb = c.createGain(); fb.gain.value = 0.3;
-    const wet = c.createGain(); wet.gain.value = 0.45;
+    this.sfx = c.createGain(); this.sfx.connect(this.master);
+    this.musicVol = c.createGain(); this.musicVol.connect(this.master);
+    this.musicDuck = c.createGain(); this.musicDuck.connect(this.musicVol);
+    this.music = c.createGain(); this.music.connect(this.musicDuck);       // "musicFade": story fades
+    this.amb = c.createGain(); this.amb.connect(this.master);
+    // reverb (generated impulse response)
+    const len = c.sampleRate * 3.2, ir = c.createBuffer(2, len, c.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
+    this.verb = c.createConvolver(); this.verb.buffer = ir;
+    this.verbSend = c.createGain(); this.verbSend.gain.value = 1;
+    const vOut = c.createGain(); vOut.gain.value = 0.45;
+    this.verbSend.connect(this.verb); this.verb.connect(vOut); vOut.connect(this.master);
+    // echo for flutes
+    this.echo = c.createDelay(1); this.echo.delayTime.value = 0.36;
+    const fb = c.createGain(), wet = c.createGain();
+    fb.gain.value = 0.28; wet.gain.value = 0.4;
     this.echo.connect(fb); fb.connect(this.echo); this.echo.connect(wet); wet.connect(this.music);
-    // white noise buffer
-    const buf = c.createBuffer(1, c.sampleRate, c.sampleRate), d = buf.getChannelData(0);
+    // noise buffer
+    const nb = c.createBuffer(1, c.sampleRate * 2, c.sampleRate), d = nb.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    this.noiseBuf = buf;
+    this.noiseBuf = nb;
+    this.applyVolumes();
+    this.loadFiles();
     this.nextTime = c.currentTime + 0.1; this.stepI = 0;
     setInterval(() => this.schedule(), 25);
-    this.mood = 'battle';
-    if (this.moodWanted && this.moodWanted !== 'battle') this.setMood(this.moodWanted);
+    this.setTrack(this.wantTrack, true);
+    if (this.ambWant) this.setAmbience(this.ambWant);
     if (this.fireWanted) this.setFire(true);
   },
-  // 'battle' = taiko + flute; 'story' = slow sad flute + soft drone
-  setMood(m) {
-    this.moodWanted = m;
-    if (!this.ctx || this.mood === m) return;
-    this.mood = m;
-    const c = this.ctx, t = c.currentTime;
-    if (m === 'story' && !this.drone) {
-      const g = c.createGain();
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.05, t + 2);
-      g.connect(this.music);
-      const oscs = [110, 164.81, 220.5].map(f => { const o = c.createOscillator(); o.type = 'sine'; o.frequency.value = f; o.connect(g); o.start(t); return o; });
-      this.drone = { g, oscs };
-    } else if (m !== 'story' && this.drone) {
-      const d = this.drone;
-      d.g.gain.setTargetAtTime(0.0001, t, 0.4);
-      d.oscs.forEach(o => o.stop(t + 2.5));
-      this.drone = null;
+  // ---------- volumes, mute, pause, ducking ----------
+  vol() { return save.vol || { music: 0.7, sfx: 0.8 }; },
+  applyVolumes() {
+    if (!this.ctx) return;
+    const v = this.vol(), t = this.ctx.currentTime;
+    this.musicVol.gain.setTargetAtTime(0.9 * v.music, t, 0.05);
+    this.sfx.gain.setTargetAtTime(v.sfx, t, 0.05);
+    this.amb.gain.setTargetAtTime(this.paused ? 0 : 0.55 * v.sfx, t, 0.1);
+  },
+  setMuted(m) {
+    this.muted = m; save.muted = m; writeSave();
+    if (this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.9, this.ctx.currentTime, 0.03);
+  },
+  setPaused(p) {                                    // pause: ambience off, music quieter
+    this.paused = p;
+    if (!this.ctx) return;
+    this.applyVolumes();
+    this.musicDuck.gain.setTargetAtTime(p ? 0.35 : 1, this.ctx.currentTime, 0.15);
+  },
+  duck(level, hold = 0.3) {                         // music dips on big hits / K.O.
+    if (!this.ctx || this.paused) return;
+    const g = this.musicDuck.gain, t = this.ctx.currentTime;
+    g.cancelScheduledValues(t); g.setTargetAtTime(level, t, 0.03); g.setTargetAtTime(1, t + hold, 0.4);
+  },
+  setMusicLevel(v, tc = 0.5) {                      // story fades (e.g. Meera's death scene -> 0)
+    this.musicLevel = v;
+    if (this.music) this.music.gain.setTargetAtTime(v, this.ctx.currentTime, tc);
+  },
+  get ok() { return !!this.ctx && !this.muted; },
+  // ---------- optional files ----------
+  loadFiles() {
+    const have = new Set(window.SHADOW_SFX || []);   // assets/sfx/manifest.js lists which files exist
+    for (const n of SFX_FILES) {
+      if (!have.has(n)) continue;
+      const a = new Audio(); a.preload = 'auto';
+      a.addEventListener('canplaythrough', () => { this.files[n] = a; }, { once: true });
+      a.addEventListener('error', () => {}, { once: true });
+      a.src = `assets/sfx/${n}.mp3`;
+    }
+    for (const k in MUSIC_FILES) {
+      if (!have.has(MUSIC_FILES[k])) continue;
+      const a = new Audio(); a.preload = 'auto'; a.loop = true;
+      a.addEventListener('canplaythrough', () => { this.musicFiles[k] = a; if (this.track === k) this.setTrack(k, true, true); }, { once: true });
+      a.addEventListener('error', () => {}, { once: true });
+      a.src = `assets/sfx/${MUSIC_FILES[k]}.mp3`;
     }
   },
-  // crackling fire bed (low rumble loop + random pops in schedule())
+  playFile(name, gain = 1) {                        // returns true if a real file was used
+    const base = this.files[name];
+    if (!base) return false;
+    const a = base.cloneNode();
+    a.volume = clamp(this.vol().sfx * 0.9 * gain * vr(0.1), 0, 1);
+    a.preservesPitch = false; a.playbackRate = clamp(this.pitch * vr(0.06), 0.5, 2);
+    a.play().catch(() => {});
+    return true;
+  },
+  // max ~3 copies of the same sound at once
+  voice(name, dur, fn) {
+    if (!this.ok) return;
+    const n = this.voices[name] || 0;
+    if (n >= 3) return;
+    this.voices[name] = n + 1;
+    setTimeout(() => { this.voices[name]--; }, dur * 1000);
+    fn(this.ctx.currentTime);
+  },
+  // ---------- synth primitives ----------
+  env(g, t, attack, peak, dur) {
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  },
+  tone(type, f0, t, dur, o = {}) {
+    const c = this.ctx, osc = c.createOscillator(), g = c.createGain(), P = o.noPitch ? 1 : this.pitch;
+    osc.type = type;
+    osc.frequency.setValueAtTime(f0 * P, t);
+    if (o.to) osc.frequency.exponentialRampToValueAtTime(o.to * P, t + (o.glide || dur));
+    this.env(g, t, o.attack || 0.004, o.gain || 0.3, dur);
+    osc.connect(g); g.connect(o.dest || this.sfx);
+    if (o.rev) { const s = c.createGain(); s.gain.value = o.rev; g.connect(s); s.connect(this.verbSend); }
+    osc.start(t); osc.stop(t + dur + 0.05);
+    return osc;
+  },
+  noise(t, dur, o = {}) {
+    const c = this.ctx, src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain(), P = o.noPitch ? 1 : this.pitch;
+    src.buffer = this.noiseBuf;
+    f.type = o.filter || 'lowpass';
+    f.frequency.setValueAtTime((o.freq || 1000) * P, t);
+    if (o.to) f.frequency.exponentialRampToValueAtTime(o.to * P, t + dur);
+    f.Q.value = o.Q || 0.8;
+    this.env(g, t, o.attack || 0.003, o.gain || 0.3, dur);
+    src.connect(f); f.connect(g); g.connect(o.dest || this.sfx);
+    if (o.rev) { const s = c.createGain(); s.gain.value = o.rev; g.connect(s); s.connect(this.verbSend); }
+    src.start(t, Math.random() * 1.5); src.stop(t + dur + 0.05);
+  },
+  crackle(t, dur, gain = 0.08, dest) {             // fiery / spark crackle pops
+    const n = Math.round(dur * 30);
+    for (let i = 0; i < n; i++) this.noise(t + Math.random() * dur, 0.015 + Math.random() * 0.03,
+      { filter: 'bandpass', freq: 1500 + Math.random() * 3500, Q: 3, gain: gain * (0.4 + Math.random()), dest });
+  },
+  // ---------- combat SFX ----------
+  slash(heavy) {                                    // sword whoosh: J light, K heavier/deeper
+    const name = heavy ? 'slash_heavy' : 'slash';
+    if (this.ok && this.playFile(name) ) return;
+    if (this.ok && heavy && this.playFile('slash')) return;
+    this.voice(name, 0.3, t => {
+      const v = vr(), dur = heavy ? 0.24 : 0.14;
+      this.noise(t, dur * v, { filter: 'bandpass', freq: heavy ? 380 : 800, to: (heavy ? 1700 : 3200) * v, Q: 1.4, gain: (heavy ? 0.3 : 0.2) * vr(0.15), attack: dur * 0.45 });
+      if (heavy) this.tone('sine', 170 * v, t, 0.22, { to: 85, gain: 0.12, attack: 0.05 });
+    });
+  },
+  rising() {                                        // uppercut swing
+    this.voice('rise', 0.3, t => this.noise(t, 0.22, { filter: 'bandpass', freq: 500, to: 4200 * vr(), Q: 1.6, gain: 0.24, attack: 0.1 }));
+  },
+  spin() {                                          // roundhouse: double whoosh
+    this.voice('spin', 0.5, t => {
+      this.noise(t, 0.2, { filter: 'bandpass', freq: 400, to: 1500, Q: 1.3, gain: 0.22, attack: 0.09 });
+      this.noise(t + 0.14, 0.24, { filter: 'bandpass', freq: 500, to: 2200 * vr(), Q: 1.3, gain: 0.28, attack: 0.1 });
+    });
+  },
+  hit(type, combo = 1) {                            // blade into flesh: dull thud + short swish
+    const heavy = type === 'kick' || type === 'roundhouse' || type === 'uppercut' || type === 'special';
+    if (this.ok && this.playFile(heavy ? 'hit_heavy' : 'hit') || (this.ok && heavy && this.playFile('hit'))) { if (heavy) this.duck(0.55, 0.25); return; }
+    this.voice('hit', 0.45, t => {
+      const up = 1 + 0.07 * Math.min(4, Math.max(0, combo - 1)), v = vr() * up;   // combos rise in pitch
+      this.tone('sine', (heavy ? 120 : 160) * v, t, heavy ? 0.3 : 0.16, { to: (heavy ? 36 : 55) * v, gain: heavy ? 0.9 : 0.7 });
+      this.noise(t, heavy ? 0.14 : 0.08, { filter: 'lowpass', freq: 1300 * v, to: 250, gain: heavy ? 0.6 : 0.45 });
+      this.noise(t, 0.05, { filter: 'bandpass', freq: 2600 * v, Q: 1.2, gain: 0.16 });
+      if (type === 'uppercut') {                    // 3rd hit: extra heavy impact
+        this.tone('sine', 72, t + 0.02, 0.45, { to: 30, gain: 0.85 });
+        this.noise(t + 0.02, 0.28, { filter: 'lowpass', freq: 520, to: 80, gain: 0.6, rev: 0.25 });
+      }
+      if (type === 'special') this.crackle(t + 0.05, 0.8, 0.09);
+    });
+    if (heavy) this.duck(0.55, 0.25);
+  },
+  clash() {                                         // sword clash on block: clang + ringing harmonics + sparks
+    if (this.ok && this.playFile('clash')) return;
+    this.voice('clash', 0.7, t => {
+      const v = vr(0.05);
+      [[880, 0.6], [1328, 0.5], [2031, 0.42], [2740, 0.32], [3910, 0.25]].forEach(([f, d], i) =>
+        this.tone(i % 2 ? 'sine' : 'triangle', f * v * vr(0.01), t, d, { gain: 0.11 - i * 0.012, rev: 0.12 }));
+      this.noise(t, 0.035, { filter: 'highpass', freq: 3800, gain: 0.35 });
+      this.crackle(t + 0.01, 0.15, 0.06);
+    });
+  },
+  shing() {                                         // perfect block: bright ring + shimmer tail
+    if (this.ok && this.playFile('perfect')) return;
+    this.voice('shing', 1.2, t => {
+      this.noise(t, 0.06, { filter: 'highpass', freq: 5000, gain: 0.22 });
+      [[2093, 1.0, 0.22], [3136, 0.8, 0.13], [4186, 0.6, 0.08]].forEach(([f, d, g]) => this.tone('sine', f, t, d, { gain: g, rev: 0.35 }));
+      const o = this.tone('sine', 5274, t, 0.9, { gain: 0.05, rev: 0.4 });
+      const lfo = this.ctx.createOscillator(), lg = this.ctx.createGain();
+      lfo.frequency.value = 14; lg.gain.value = 60; lfo.connect(lg); lg.connect(o.frequency); lfo.start(t); lfo.stop(t + 1);
+    });
+  },
+  bodyFall(ko) {                                    // knockdown / KO thump
+    this.voice('fall', 0.6, t => {
+      this.noise(t, 0.35, { filter: 'lowpass', freq: 320, to: 90, gain: ko ? 0.85 : 0.65 });
+      this.tone('sine', 62, t, 0.4, { to: 34, gain: ko ? 0.85 : 0.65 });
+      this.noise(t + 0.13, 0.16, { filter: 'lowpass', freq: 260, gain: 0.3 });
+    });
+  },
+  shadowStrike() {                                  // rising charge -> deep boom -> fiery crackle tail
+    if (!this.ok) return;
+    const t = this.ctx.currentTime, c = this.ctx;
+    const o = c.createOscillator(), f = c.createBiquadFilter(), g = c.createGain();
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(80, t); o.frequency.exponentialRampToValueAtTime(420, t + 0.6);
+    f.type = 'lowpass'; f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(3200, t + 0.6);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + 0.55); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+    o.connect(f); f.connect(g); g.connect(this.sfx); o.start(t); o.stop(t + 0.75);
+    this.noise(t, 0.6, { filter: 'bandpass', freq: 400, to: 3000, Q: 1, gain: 0.12, attack: 0.5 });
+    if (!this.playFile('boom')) {
+      this.tone('sine', 70, t + 0.55, 1.6, { to: 24, gain: 1, rev: 0.3, noPitch: true });
+      this.noise(t + 0.55, 1.2, { filter: 'lowpass', freq: 420, to: 60, gain: 0.8, attack: 0.01, noPitch: true });
+    }
+    this.crackle(t + 0.6, 1.2, 0.08);
+    this.duck(0.35, 0.8);
+  },
+  step(g = 1) { this.voice('step', 0.08, t => { this.noise(t, 0.035, { filter: 'bandpass', freq: 900 * vr(0.15), Q: 2, gain: 0.07 * g * vr(0.2) }); this.tone('sine', 190 * vr(0.1), t, 0.04, { to: 120, gain: 0.05 * g }); }); },
+  jump() { this.voice('jump', 0.25, t => this.noise(t, 0.18, { filter: 'bandpass', freq: 600, to: 1500 * vr(), Q: 1.2, gain: 0.12, attack: 0.06 })); },
+  land() { this.voice('land', 0.2, t => { this.tone('sine', 120 * vr(), t, 0.12, { to: 60, gain: 0.3 }); this.noise(t, 0.06, { filter: 'lowpass', freq: 800, gain: 0.2 }); }); },
+  grunt(low) {                                      // short vocal "huh": formant-filtered buzz + breath
+    this.voice('grunt', 0.35, t => {
+      const c = this.ctx, src = c.createOscillator(), g = c.createGain(), f0 = (low ? 82 : 112) * vr(0.1) * this.pitch;
+      src.type = 'sawtooth'; src.frequency.setValueAtTime(f0, t + 0.04); src.frequency.exponentialRampToValueAtTime(f0 * 0.78, t + 0.26);
+      this.env(g, t + 0.04, 0.02, low ? 0.22 : 0.16, low ? 0.34 : 0.22);
+      for (const [ff, q, gg] of [[620, 6, 1], [1050, 8, 0.6]]) {
+        const bp = c.createBiquadFilter(), bg = c.createGain();
+        bp.type = 'bandpass'; bp.frequency.value = ff * vr(0.05); bp.Q.value = q; bg.gain.value = gg;
+        src.connect(bp); bp.connect(bg); bg.connect(g);
+      }
+      g.connect(this.sfx); src.start(t + 0.04); src.stop(t + 0.42);
+      this.noise(t, 0.07, { filter: 'bandpass', freq: 1400, Q: 2, gain: 0.08, attack: 0.02 });   // "h" breath
+    });
+  },
+  heartbeat() { this.voice('heart', 0.5, t => { this.tone('sine', 62, t, 0.13, { to: 44, gain: 0.5 }); this.tone('sine', 56, t + 0.22, 0.11, { to: 40, gain: 0.35 }); }); },
+  // ---------- announcer ----------
+  bell(base = 220, gain = 0.5, decay = 3.2) {        // deep temple bell
+    if (this.ok && this.playFile('bell', gain * 1.4)) return;
+    this.voice('bell', 1, t => {
+      [[1, 1], [2.01, 0.55], [2.76, 0.4], [3.92, 0.25], [5.4, 0.14]].forEach(([r, g], i) =>
+        this.tone('sine', base * r, t, decay - i * 0.45, { gain: gain * g * 0.5, rev: 0.5, noPitch: true }));
+      this.noise(t, 0.05, { filter: 'bandpass', freq: 1800, gain: 0.15, noPitch: true });
+    });
+  },
+  shankh(t0 = 0) {                                  // conch horn: sawtooth + slow pitch rise + breath
+    if (!this.ok) return;
+    const c = this.ctx, t = c.currentTime + t0, o = c.createOscillator(), o2 = c.createOscillator(), bp = c.createBiquadFilter(), lp = c.createBiquadFilter(), g = c.createGain();
+    o.type = 'sawtooth'; o2.type = 'sawtooth';
+    o.frequency.setValueAtTime(175, t); o.frequency.exponentialRampToValueAtTime(235, t + 1.4);
+    o2.frequency.setValueAtTime(351, t); o2.frequency.exponentialRampToValueAtTime(470, t + 1.4);
+    bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 2.5; lp.type = 'lowpass'; lp.frequency.value = 2200;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + 0.35); g.gain.setValueAtTime(0.16, t + 1.2); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
+    o.connect(bp); o2.connect(bp); bp.connect(lp); lp.connect(g); g.connect(this.sfx);
+    const s = c.createGain(); s.gain.value = 0.4; g.connect(s); s.connect(this.verbSend);
+    o.start(t); o2.start(t); o.stop(t + 1.9); o2.stop(t + 1.9);
+    this.noise(t, 1.7, { filter: 'bandpass', freq: 1300, Q: 1.5, gain: 0.035, attack: 0.4, noPitch: true });
+  },
+  roundStart() { this.bell(196, 0.55); this.shankh(0.25); },
+  dholHit() {                                       // "FIGHT!"
+    if (this.ok && this.playFile('dhol')) return;
+    this.voice('dhol', 0.6, t => {
+      this.tone('sine', 95, t, 0.55, { to: 44, gain: 1, rev: 0.2, noPitch: true });
+      this.noise(t, 0.16, { filter: 'lowpass', freq: 260, gain: 0.6, noPitch: true });
+      this.tone('triangle', 420, t, 0.12, { to: 300, gain: 0.25, noPitch: true });
+      this.noise(t, 0.03, { filter: 'highpass', freq: 2500, gain: 0.25, noPitch: true });
+    });
+    this.duck(0.5, 0.3);
+  },
+  koBell() { this.bell(110, 0.9, 5); this.duck(0.05, 1.1); },   // huge bell + near-silence
+  victory() {                                       // short triumphant flute + dhol phrase
+    if (!this.ok) return;
+    const t = this.ctx.currentTime;
+    ['S', 'g', 'm', 'P', "S'"].forEach((n, i) => this.flute(swara(n), t + i * 0.16, i === 4 ? 0.9 : 0.15, 0.11, this.sfx));
+    [0, 0.32, 0.64].forEach(d => setTimeout(() => this.dholHit(), d * 1000));
+  },
+  defeat() {                                        // low sad drone + one flute note
+    if (!this.ok) return;
+    const t = this.ctx.currentTime;
+    this.tone('sawtooth', 73.4, t, 3.2, { gain: 0.08, attack: 0.6, noPitch: true });
+    this.tone('sine', 110, t, 3.2, { gain: 0.06, attack: 0.6, noPitch: true });
+    this.flute(swara('r'), t + 0.8, 2.2, 0.09, this.sfx);
+    this.duck(0.2, 3);
+  },
+  // ---------- UI ----------
+  blip() { this.voice('tick', 0.06, t => { this.tone('sine', 880 * vr(0.04), t, 0.035, { to: 640, gain: 0.07, noPitch: true }); this.noise(t, 0.02, { filter: 'bandpass', freq: 2200, Q: 3, gain: 0.06, noPitch: true }); }); },
+  select() { this.voice('ting', 0.5, t => { this.tone('sine', 2637, t, 0.45, { gain: 0.11, rev: 0.25, noPitch: true }); this.tone('sine', 3951, t, 0.3, { gain: 0.05, noPitch: true }); }); },
+  page() { this.voice('page', 0.25, t => this.noise(t, 0.2, { filter: 'bandpass', freq: 1400, to: 600, Q: 0.9, gain: 0.05, attack: 0.08, noPitch: true })); },
+  typeTick() { this.voice('type', 0.03, t => this.noise(t, 0.012, { filter: 'highpass', freq: 3200 * vr(0.2), gain: 0.022, noPitch: true })); },
+  // ---------- backwards-compatible names used across the game ----------
+  whoosh(p = 1) { this.slash(p > 1.2); },
+  thud() { this.hit('punch'); },
+  heavy() { this.hit('kick'); },
+  clink() { this.clash(); },
+  ding() { this.shing(); },
+  boom() { this.shadowStrike(); },
+  gong() { this.bell(); },
+  drum() { this.voice('drum', 0.7, t => { this.tone('sine', 78, t, 0.65, { to: 38, gain: 0.6, noPitch: true }); this.noise(t, 0.12, { filter: 'lowpass', freq: 240, gain: 0.35, noPitch: true }); }); },
+  // ---------- music ----------
+  setMood(m) { if (m === 'story') this.setTrack('story'); },
+  setTrack(name, force, fileReady) {
+    this.wantTrack = name;
+    if (!this.ctx) return;
+    if (this.track === name && !force) return;
+    const c = this.ctx, t = c.currentTime;
+    if (this.trackGain && !fileReady) {             // crossfade out the old synth track
+      const old = this.trackGain; old.gain.cancelScheduledValues(t); old.gain.setTargetAtTime(0.0001, t, 0.4);
+      setTimeout(() => old.disconnect(), 3000);
+    }
+    if (this.fileEl && this.fileEl !== this.musicFiles[name]) { const el = this.fileEl; this.fadeEl(el, 0, () => el.pause()); this.fileEl = null; }
+    this.track = name;
+    this.phrase = 0; this.prevNote = null;
+    if (!name) { this.trackGain = null; return; }
+    const g = c.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.setTargetAtTime(1, t, 0.5); g.connect(this.music);
+    this.trackGain = g;
+    const el = this.musicFiles[name];               // a real music file replaces the synth track
+    if (el) { this.fileEl = el; el.currentTime = 0; el.volume = 0; el.play().catch(() => {}); this.fadeEl(el, 1); }
+  },
+  fadeEl(el, to, done) {                            // volume fades for <audio> music
+    const from = el.volume, start = performance.now();
+    const tick = () => {
+      const k = Math.min(1, (performance.now() - start) / 1200);
+      el._fade = from + (to - from) * k; this.updateElVolume(el);
+      if (k < 1) requestAnimationFrame(tick); else if (done) done();
+    };
+    tick();
+  },
+  updateElVolume(el) {
+    const v = this.vol(), fade = el._fade != null ? el._fade : 1;
+    el.volume = clamp((this.muted ? 0 : 1) * v.music * this.musicLevel * (this.paused ? 0.35 : 1) * fade * 0.8, 0, 1);
+  },
+  schedule() {
+    const c = this.ctx;
+    if (!c || c.state !== 'running') return;
+    if (this.fileEl) this.updateElVolume(this.fileEl);
+    if (this.nextTime < c.currentTime - 0.1) this.nextTime = c.currentTime + 0.05;
+    const tr = TRACKS[this.track];
+    const stepDur = tr ? 60 / tr.bpm / 2 : 0.3;
+    while (this.nextTime < c.currentTime + 0.2) {
+      if (!this.muted && tr && !this.fileEl) this.musicStep(this.stepI, this.nextTime, tr, stepDur);
+      this.nextTime += stepDur;
+      this.stepI = (this.stepI + 1) % 32;
+    }
+    if (!this.muted && !this.paused) this.ambienceTick();
+    if (this.fire && !this.muted && Math.random() < 0.3)        // story fire crackle pops
+      this.noise(c.currentTime + Math.random() * 0.03, 0.02 + Math.random() * 0.03,
+        { filter: 'bandpass', freq: 1500 + Math.random() * 3000, Q: 3, gain: 0.04 + Math.random() * 0.08, attack: 0.002, noPitch: true });
+  },
+  musicStep(i, t, tr, sd) {
+    const dest = this.trackGain;
+    if (!dest) return;
+    if (i % 4 === 0) {                              // tanpura pluck: Pa - Sa' - Sa' - Sa (one per beat-pair)
+      const pat = [SA * 1.5 / 2 * 2, SA * 2, SA * 2, SA];
+      this.tanpura(pat[(i / 4) % 4], t, tr.drone, dest);
+    }
+    if (tr.tabla) {
+      const bol = TABLA[i % 16];
+      this.bol(bol, t, dest);
+      if (tr.dhol && BOSS_DHOL.includes(i % 16)) this.tone('sine', 68, t, 0.45, { to: 38, gain: 0.5, dest, noPitch: true });
+    }
+    if (i === 0) this.phrase = Math.floor(Math.random() * PHRASES[this.track].length);
+    const n = PHRASES[this.track][this.phrase].find(p => p[0] === i);
+    if (n) {
+      const f = swara(n[1]);
+      this.flute(f, t, n[2] * sd, tr.flute, dest, this.prevNote);
+      this.prevNote = f;
+    }
+  },
+  tanpura(f, t, g, dest) {                          // plucked drone string with buzz
+    const c = this.ctx, lp = c.createBiquadFilter(), gg = c.createGain();
+    lp.type = 'lowpass'; lp.frequency.setValueAtTime(2400, t); lp.frequency.exponentialRampToValueAtTime(700, t + 2.5);
+    this.env(gg, t, 0.01, g, 3);
+    for (const d of [1, 1.003, 2.002]) {
+      const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f * d;
+      o.connect(lp); o.start(t); o.stop(t + 3.05);
+    }
+    lp.connect(gg); gg.connect(dest);
+  },
+  bol(b, t, dest) {                                 // tabla: bayan (bass) + dayan (treble) membranes
+    const bass = (g) => this.tone('sine', 110, t, 0.3, { to: 68, glide: 0.18, gain: g, dest, noPitch: true });
+    const treble = (f, d, g) => {
+      this.tone('sine', f, t, d, { gain: g, dest, noPitch: true });
+      this.tone('sine', f * 2.76, t, d * 0.4, { gain: g * 0.3, dest, noPitch: true });
+      this.noise(t, 0.012, { filter: 'highpass', freq: 3000, gain: g * 0.5, dest, noPitch: true });
+    };
+    if (b === 'dha') { bass(0.32); treble(520, 0.22, 0.14); }
+    else if (b === 'dhin') { bass(0.26); treble(560, 0.35, 0.12); }
+    else if (b === 'na') treble(610, 0.25, 0.12);
+    else if (b === 'tin') treble(650, 0.16, 0.08);
+  },
+  flute(f, t, dur, vol = 0.07, dest = this.music, prev) {   // bansuri: sine + vibrato + glide + breath
+    const c = this.ctx, o = c.createOscillator(), o2 = c.createOscillator(), g = c.createGain(), lfo = c.createOscillator(), lg = c.createGain();
+    o.type = 'sine'; o2.type = 'sine';
+    o.frequency.setValueAtTime(prev || f, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.07);
+    o2.frequency.setValueAtTime((prev || f) * 2, t); o2.frequency.exponentialRampToValueAtTime(f * 2, t + 0.07);
+    lfo.frequency.value = 5.4; lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(f * 0.011, t + 0.3);
+    lfo.connect(lg); lg.connect(o.frequency);
+    const g2 = c.createGain(); g2.gain.value = 0.12; o2.connect(g2); g2.connect(g);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.09);
+    g.gain.setValueAtTime(vol, t + Math.max(0.1, dur * 0.7));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.18);
+    o.connect(g); g.connect(dest); g.connect(this.echo);
+    o.start(t); o2.start(t); lfo.start(t);
+    o.stop(t + dur + 0.25); o2.stop(t + dur + 0.25); lfo.stop(t + dur + 0.25);
+    this.noise(t, 0.14, { filter: 'bandpass', freq: f * 2, Q: 2, gain: vol * 0.22, attack: 0.04, dest, noPitch: true });
+  },
+  // ---------- arena ambience ----------
+  loopNoise(filter, freq, gain, q = 0.7) {
+    const c = this.ctx, src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    src.buffer = this.noiseBuf; src.loop = true;
+    f.type = filter; f.frequency.value = freq; f.Q.value = q;
+    g.gain.setValueAtTime(0.0001, c.currentTime); g.gain.setTargetAtTime(gain, c.currentTime, 0.8);
+    src.connect(f); f.connect(g); g.connect(this.amb); src.start();
+    return { src, f, g, stop: [src] };
+  },
+  setAmbience(kind) {                               // null | 'arena' | 'storm'
+    this.ambWant = kind;
+    if (!this.ctx || this.ambKind === kind) return;
+    const t = this.ctx.currentTime;
+    if (this.ambNodes) for (const n of this.ambNodes) { n.g.gain.setTargetAtTime(0.0001, t, 0.5); for (const s of n.stop) s.stop(t + 2); }
+    this.ambNodes = null; this.ambKind = kind;
+    if (!kind) return;
+    const storm = kind === 'storm', nodes = [];
+    const wind = this.loopNoise('bandpass', 420, storm ? 0.12 : 0.06, 0.8);   // wind with slow gusts
+    const lfo = this.ctx.createOscillator(), lg = this.ctx.createGain();
+    lfo.frequency.value = 0.09; lg.gain.value = 220; lfo.connect(lg); lg.connect(wind.f.frequency); lfo.start(); wind.stop.push(lfo);
+    nodes.push(wind);
+    nodes.push(this.loopNoise('lowpass', 420, 0.035));                         // brazier fire bed
+    if (!storm) nodes.push(this.loopNoise('lowpass', 650, 0.045));             // distant waterfall
+    else {                                                                    // ominous low drone
+      const g = this.ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.setTargetAtTime(0.05, t, 1); g.connect(this.amb);
+      const os = [55, 82.4, 55.6].map(f => { const o = this.ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f; o.connect(g); o.start(); return o; });
+      nodes.push({ g, stop: os });
+      this.thunderT = t + 6;
+    }
+    this.ambNodes = nodes;
+  },
+  ambienceTick() {
+    if (!this.ambKind || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (Math.random() < 0.18) this.noise(t + Math.random() * 0.03, 0.015 + Math.random() * 0.03,    // brazier crackle
+      { filter: 'bandpass', freq: 1800 + Math.random() * 2500, Q: 3, gain: 0.02 + Math.random() * 0.04, dest: this.amb, noPitch: true });
+    if (this.ambKind === 'arena' && Math.random() < 0.004) {                  // night insects
+      const f = 4200 + Math.random() * 1500;
+      for (let i = 0; i < 6; i++) this.tone('sine', f, t + i * 0.045, 0.03, { gain: 0.012, dest: this.amb, noPitch: true });
+    }
+    if (this.ambKind === 'storm' && t > this.thunderT) {                      // distant thunder ~every 20s
+      this.thunderT = t + 16 + Math.random() * 8;
+      this.noise(t, 3.2, { filter: 'lowpass', freq: 220, to: 60, gain: 0.3, attack: 0.6, dest: this.amb, noPitch: true });
+      this.tone('sine', 48, t, 2.8, { to: 32, gain: 0.25, attack: 0.5, dest: this.amb, noPitch: true });
+    }
+  },
+  // cutscene fire bed (crackle pops come from schedule())
   setFire(on) {
     this.fireWanted = on;
     if (!this.ctx) return;
@@ -291,140 +725,9 @@ const Sound = {
       this.fire = null;
     }
   },
-  setMuted(m) {
-    this.muted = m; save.muted = m; writeSave();
-    if (this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.9, this.ctx.currentTime, 0.03);
-  },
-  get ok() { return !!this.ctx && !this.muted; },
-  env(g, t, attack, peak, dur) {
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(peak, t + attack);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  },
-  tone(type, f0, t, dur, o = {}) {
-    const c = this.ctx, osc = c.createOscillator(), g = c.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(f0, t);
-    if (o.to) osc.frequency.exponentialRampToValueAtTime(o.to, t + dur);
-    this.env(g, t, o.attack || 0.005, o.gain || 0.3, dur);
-    osc.connect(g); g.connect(o.dest || this.sfx);
-    osc.start(t); osc.stop(t + dur + 0.05);
-  },
-  noise(t, dur, o = {}) {
-    const c = this.ctx, src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
-    src.buffer = this.noiseBuf;
-    f.type = o.filter || 'lowpass';
-    f.frequency.setValueAtTime(o.freq || 1000, t);
-    if (o.to) f.frequency.exponentialRampToValueAtTime(o.to, t + dur);
-    f.Q.value = o.Q || 0.8;
-    this.env(g, t, o.attack || 0.003, o.gain || 0.3, dur);
-    src.connect(f); f.connect(g); g.connect(o.dest || this.sfx);
-    src.start(t, Math.random() * 0.4); src.stop(t + dur + 0.05);
-  },
-  // ---- sound effects ----
-  whoosh(p = 1) {
-    if (!this.ok) return;
-    const t = this.ctx.currentTime, dur = 0.12 + 0.08 * p;
-    this.noise(t, dur, { filter: 'bandpass', freq: 380, to: 1500 + 700 * p, Q: 1.4, gain: 0.16 * p, attack: dur * 0.45 });
-  },
-  thud() {
-    if (!this.ok) return;
-    const t = this.ctx.currentTime;
-    this.tone('sine', 170, t, 0.14, { to: 50, gain: 0.7 });
-    this.noise(t, 0.07, { filter: 'lowpass', freq: 1400, gain: 0.45 });
-  },
-  heavy() {
-    if (!this.ok) return;
-    const t = this.ctx.currentTime;
-    this.tone('sine', 125, t, 0.32, { to: 34, gain: 0.95 });
-    this.tone('triangle', 240, t, 0.12, { to: 60, gain: 0.3 });
-    this.noise(t, 0.16, { filter: 'lowpass', freq: 1000, to: 200, gain: 0.7 });
-  },
-  clink() {
-    if (!this.ok) return;
-    const t = this.ctx.currentTime;
-    [1250, 1890, 2730, 3610].forEach((f, i) => this.tone('triangle', f, t, 0.32 - i * 0.05, { gain: 0.09 }));
-    this.noise(t, 0.03, { filter: 'highpass', freq: 3000, gain: 0.3 });
-  },
-  ding() {
-    if (!this.ok) return;
-    const t = this.ctx.currentTime;
-    this.tone('sine', 1568, t, 0.9, { gain: 0.3 });
-    this.tone('sine', 2349, t, 0.7, { gain: 0.16 });
-    this.tone('sine', 3136, t, 0.45, { gain: 0.08 });
-  },
-  boom() {
-    if (!this.ok) return;
-    const t = this.ctx.currentTime;
-    this.tone('sine', 90, t, 1.4, { to: 26, gain: 1 });
-    this.tone('sawtooth', 55, t, 0.6, { to: 28, gain: 0.12 });
-    this.noise(t, 1.0, { filter: 'lowpass', freq: 500, to: 70, gain: 0.7, attack: 0.01 });
-  },
-  gong() {
-    if (!this.ok) return;
-    const t = this.ctx.currentTime;
-    [1, 1.52, 2.03, 2.74, 3.33, 4.2].forEach((r, i) => this.tone('sine', 98 * r, t, 3 - i * 0.35, { gain: 0.32 / (i + 1) }));
-    this.noise(t, 0.1, { filter: 'bandpass', freq: 600, gain: 0.3 });
-  },
-  blip() { if (this.ok) this.tone('triangle', 660, this.ctx.currentTime, 0.07, { gain: 0.12 }); },
-  drum() {                                    // distant war drum (intro)
-    if (!this.ok) return;
-    const t = this.ctx.currentTime;
-    this.tone('sine', 78, t, 0.65, { to: 38, gain: 0.75 });
-    this.noise(t, 0.12, { filter: 'lowpass', freq: 240, gain: 0.4 });
-  },
-  setMusicLevel(v, tc = 0.5) {                // 0 = silence (story moments), 1 = normal
-    this.musicLevel = v;
-    if (this.music) this.music.gain.setTargetAtTime(0.28 * v, this.ctx.currentTime, tc);
-  },
-  select() { if (this.ok) this.tone('triangle', 880, this.ctx.currentTime, 0.14, { to: 1320, gain: 0.16 }); },
-  // ---- music ----
-  schedule() {
-    const c = this.ctx;
-    if (!c || c.state !== 'running') return;
-    if (this.nextTime < c.currentTime - 0.1) this.nextTime = c.currentTime + 0.05;
-    if (this.fire && !this.muted && Math.random() < 0.3)        // fire crackle pops
-      this.noise(c.currentTime + Math.random() * 0.03, 0.02 + Math.random() * 0.03,
-        { filter: 'bandpass', freq: 1500 + Math.random() * 3000, Q: 3, gain: 0.04 + Math.random() * 0.08, attack: 0.002 });
-    while (this.nextTime < c.currentTime + 0.2) {
-      if (!this.muted) this.musicStep(this.stepI, this.nextTime);
-      this.nextTime += MUSIC_STEP;
-      this.stepI = (this.stepI + 1) % 32;
-    }
-  },
-  musicStep(i, t) {
-    if (this.mood === 'story') {
-      const n = STORY_MELODY.find(m => m[0] === i);
-      if (n) this.flute(NOTE[n[1]], t, n[2] * MUSIC_STEP, 0.065);
-      return;
-    }
-    const s = i % 16;
-    if (DON.includes(s)) {
-      const soft = s === 14;
-      this.tone('sine', 100, t, 0.42, { to: 44, gain: soft ? 0.35 : 0.6, dest: this.music });
-      this.noise(t, 0.08, { filter: 'lowpass', freq: 300, gain: soft ? 0.18 : 0.32, dest: this.music });
-    }
-    if (KA.includes(s)) this.noise(t, 0.035, { filter: 'highpass', freq: 2600, gain: 0.12, dest: this.music });
-    const n = MELODY.find(m => m[0] === i);
-    if (n) this.flute(NOTE[n[1]], t, n[2] * MUSIC_STEP);
-  },
-  flute(f, t, dur, vol = 0.09) {
-    const c = this.ctx, o = c.createOscillator(), g = c.createGain(), lfo = c.createOscillator(), lg = c.createGain();
-    o.type = 'sine'; o.frequency.value = f;
-    lfo.frequency.value = 5.2;
-    lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(f * 0.012, t + 0.25);
-    lfo.connect(lg); lg.connect(o.frequency);
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + 0.08);
-    g.gain.setValueAtTime(vol, t + dur * 0.7);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.15);
-    o.connect(g); g.connect(this.music); g.connect(this.echo);
-    o.start(t); lfo.start(t); o.stop(t + dur + 0.2); lfo.stop(t + dur + 0.2);
-    this.noise(t, 0.12, { filter: 'bandpass', freq: f * 2, Q: 2, gain: 0.02, attack: 0.04, dest: this.music });
-  },
 };
 
-function toggleMute() { Sound.init(); Sound.setMuted(!Sound.muted); }
+function toggleMute() { Sound.init(); Sound.setMuted(!Sound.muted); if (Sound.fileEl) Sound.updateElVolume(Sound.fileEl); }
 
 /* =========================================================================
    5. CANVAS SETUP / RESIZE (scaled to fit, keeps 16:9)
@@ -901,6 +1204,11 @@ addEventListener('keydown', e => {
   if (m) {
     if (c === 'KeyW' || c === 'ArrowUp') { m.sel = (m.sel + m.items.length - 1) % m.items.length; Sound.blip(); }
     else if (c === 'KeyS' || c === 'ArrowDown') { m.sel = (m.sel + 1) % m.items.length; Sound.blip(); }
+    else if ((c === 'KeyA' || c === 'ArrowLeft' || c === 'KeyD' || c === 'ArrowRight') && m.items[m.sel].slider) {
+      const k = m.items[m.sel].slider, d = (c === 'KeyA' || c === 'ArrowLeft') ? -0.1 : 0.1;
+      save.vol[k] = clamp(Math.round((save.vol[k] + d) * 10) / 10, 0, 1);
+      writeSave(); Sound.applyVolumes(); Sound.blip();
+    }
     else if (isConfirm(c)) activate(m);
     else if ((c === 'Escape' || (c === 'KeyP' && paused)) && m.back) { Sound.blip(); m.back(); }
     return;
@@ -942,8 +1250,15 @@ canvas.addEventListener('mousedown', e => {
   if (inRect(MUTE_RECT, p)) { toggleMute(); return; }
   const m = activeMenu();
   if (m) {
+    const sl = m.items.findIndex(it => it.slider && inRect(it.bar, p));
+    if (sl >= 0) {                                     // click on a volume bar sets the level
+      const it = m.items[sl]; m.sel = sl;
+      save.vol[it.slider] = clamp(Math.round((p.x - it.bar.x0) / it.bar.w0 * 20) / 20, 0, 1);
+      writeSave(); Sound.applyVolumes(); Sound.blip();
+      return;
+    }
     const i = m.items.findIndex(it => inRect(it.rect, p));
-    if (i >= 0) { m.sel = i; activate(m); }
+    if (i >= 0) { m.sel = i; if (m.items[i].slider) Sound.blip(); else activate(m); }
     return;
   }
   if (scene === 'custom') customClick(p);
@@ -1014,7 +1329,7 @@ class Fighter {
   startAttack(type, inp, key) {
     this.attack = { type, t: 0, hit: false };
     inp.consume(key);
-    Sound.whoosh(type === 'roundhouse' ? 1.5 : HEAVY[type] ? 1.15 : 0.8);
+    if (type === 'roundhouse') Sound.spin(); else if (type === 'uppercut') Sound.rising(); else Sound.slash(type === 'kick');
     this.act(kindOf(type), type);
   }
 
@@ -1094,6 +1409,7 @@ class Fighter {
           if (inp.up) {
             this.vy = JUMP_V; this.grounded = false; this.vx = dir * 5.2 * this.speed;
             this.jumpId++; this.act('jump', 'jump');
+            if (scene === 'battle') Sound.jump();
           }
         }
       } else {
@@ -1132,6 +1448,10 @@ class Fighter {
     if (this.grounded && !moving && !dashing) this.vx *= this.hitstun > 0 || this.blockstun > 0 ? 0.88 : 0.75;
     this.physics();
     this.walkPhase += this.vx * this.facing * 0.075;
+    if (scene === 'battle' && this.grounded && Math.abs(this.vx) > 0.7) {          // soft footsteps on stone
+      const sp = Math.floor(this.walkPhase / Math.PI);
+      if (sp !== this.stepPh) { this.stepPh = sp; Sound.step(this.isPlayer ? 1 : 0.6); }
+    }
     this.updatePose();
   }
 
@@ -1156,7 +1476,7 @@ class Fighter {
         this.landedKO = true;
         spawnDust(this.x - this.facing * 60, GROUND, 16, 1.6, 70);
         game.shake = Math.max(game.shake, 8);
-        Sound.heavy();
+        Sound.bodyFall(true);
       }
       return;
     }
@@ -1164,10 +1484,10 @@ class Fighter {
       this.launched = false; this.hitstun = 0; this.attack = null; this.downT = 45;
       spawnDust(this.x - this.facing * 50, GROUND, 12, 1.4, 60);
       game.shake = Math.max(game.shake, 6);
-      Sound.thud();
+      Sound.bodyFall(false);
       return;
     }
-    if (impact > 6) spawnDust(this.x, GROUND, 7, 0.8, 22);
+    if (impact > 6) { spawnDust(this.x, GROUND, 7, 0.8, 22); if (scene === 'battle') Sound.land(); }
   }
 
   // Pick a target keyframe and interpolate the current pose toward it
@@ -1542,7 +1862,7 @@ function checkHit(a, b) {
       spawnHit(p.x, p.y, 'perfect', 2.2);
       popup(b, 'PERFECT!', '#9ff3ff', 38);
       game.hitstop = 9; game.shake = 5;
-      Sound.ding();
+      Sound.shing();
       if (b.isPlayer) st.perfects++;
       if (b === enemy) creditCounter();
       return;
@@ -1573,7 +1893,8 @@ function checkHit(a, b) {
     spawnHit(p.x, p.y, type === 'special' ? 'special' : 'hit', d.power, type === 'special' ? auraColor(a) : null);
     game.hitstop = d.hitstop;
     game.shake = 2 + d.power * 3.5;
-    if (HEAVY[type]) Sound.heavy(); else Sound.thud();
+    Sound.hit(type, a.combo);                    // pitch rises with the combo count
+    if (Math.random() < 0.55) Sound.grunt(false);
     if (a.combo >= 2) popup(a, a.combo + ' HIT COMBO!', '#ffd27a');
     if (type === 'special') { a.attack.t = d.startup + d.active; a.vx = a.facing * 2; }
     if (a.isPlayer) { st.hits++; st.dmgDealt += dmg; st.maxCombo = Math.max(st.maxCombo, a.combo); fs.perf[rng].d += dmg; }
@@ -1585,6 +1906,7 @@ function checkHit(a, b) {
   if (b.hp <= 0) {
     b.hp = 0; b.ko = true; b.attack = null; b.hitstun = 0; b.blocking = false; b.launched = false; b.downT = 0;
     b.vx = a.facing * 8; b.vy = -8; b.grounded = false;
+    Sound.grunt(true);
     onKO(a);
   }
 }
@@ -1857,11 +2179,17 @@ const menus = {
     { label: 'CUSTOMIZE', act: () => openCustomize() },
     { label: 'CONTROLS', act: () => { scene = 'controls'; sceneT = 0; menus.controls.sel = 0; } },
   ] },
-  controls: { sel: 0, items: [{ label: 'BACK', act: () => goMenu() }], back: () => goMenu() },
+  controls: { sel: 0, items: [
+    { label: 'MUSIC', slider: 'music', act: () => {} },
+    { label: 'SFX', slider: 'sfx', act: () => {} },
+    { label: 'BACK', act: () => goMenu() },
+  ], back: () => goMenu() },
   pause: { sel: 0, items: [
     { label: 'RESUME', act: () => resumeGame() },
     { label: 'RESTART', act: () => startMatch() },
     { label: 'MENU', act: () => goMenu() },
+    { label: 'MUSIC', slider: 'music', act: () => {} },
+    { label: 'SFX', slider: 'sfx', act: () => {} },
   ], back: () => resumeGame() },
   lose: { sel: 0, items: [
     { label: 'TRY AGAIN', act: () => { story.stats.retries++; startMatch(); } },
@@ -1884,6 +2212,7 @@ function goMenu() {
   scene = 'menu'; sceneT = 0; paused = false;
   menus.main.sel = 0;
   menuFighter = new Fighter(270, 1, 'YOU', true);
+  Sound.setPaused(false); Sound.setTrack('menu'); Sound.setAmbience(null);   // tanpura + bansuri menu music
 }
 
 function startStory() {
@@ -1901,7 +2230,9 @@ function goVS() {
   vsPlayer = new Fighter(330, 1, 'YOU', true);
   vsEnemy = new Fighter(950, -1, opp.name, false, opp);
   vsDlg.i = 0; vsDlg.t = 0;
-  Sound.whoosh(1.6);
+  Sound.slash(true);
+  Sound.setTrack(story.stage >= OPPONENTS.length - 1 ? 'boss' : 'fight');
+  Sound.setAmbience(null);
 }
 
 // VS dialogue: Enter/click completes the typing, then advances; after the last line the fight starts
@@ -1911,12 +2242,12 @@ function advanceVS() {
   if (!line) { startMatch(); return; }
   if (vsDlg.t * 40 < line.text.length) { vsDlg.t = 999; return; }
   vsDlg.i++; vsDlg.t = 0;
-  Sound.blip();
+  Sound.page();
   if (vsDlg.i >= lines.length) startMatch();
 }
 
 // After winning a match: the opponent's defeat line, then continue
-function startOutro() { game.state = 'outro'; game.t = 0; Sound.blip(); }
+function startOutro() { game.state = 'outro'; game.t = 0; Sound.page(); }
 function advanceOutro(skip) {
   if (game.state !== 'outro') return;
   if (!skip && (game.t - 0.4) * 32 < currentOpp().defeat.length) { game.t = 99; return; }
@@ -1925,6 +2256,9 @@ function advanceOutro(skip) {
 
 function startMatch() {
   scene = 'battle'; paused = false;
+  Sound.setPaused(false);
+  Sound.setTrack(story.stage >= OPPONENTS.length - 1 ? 'boss' : 'fight');   // boss fight is faster + extra low drums
+  Sound.setAmbience(currentOpp().img === 2 ? 'storm' : 'arena');
   game.round = 1; game.wins = [0, 0]; game.matchOver = false;
   menus.lose.sel = 0;
   // adaptive AI: fresh per-fight stats; long-term profile fades a bit so it tracks your current style
@@ -1947,14 +2281,15 @@ function showVictory() {
   scene = 'victory'; sceneT = 0;
   victoryFighter = new Fighter(300, 1, 'YOU', true);
   victoryFighter.forcePose = 'victory';
-  Sound.gong(); setTimeout(() => Sound.ding(), 400);
+  Sound.victory(); Sound.setTrack('menu'); Sound.setAmbience(null);
 }
 
-function pauseGame() { if (!paused) { paused = true; menus.pause.sel = 0; Sound.blip(); } }
-function resumeGame() { paused = false; for (const k in buf) buf[k] = 0; }
+function pauseGame() { if (!paused) { paused = true; menus.pause.sel = 0; Sound.blip(); Sound.setPaused(true); } }
+function resumeGame() { paused = false; for (const k in buf) buf[k] = 0; Sound.setPaused(false); }
 
 function startRound() {
   const opp = currentOpp();
+  Sound.roundStart();                          // temple bell + shankh horn
   player = new Fighter(400, 1, 'YOU', true);
   enemy = new Fighter(880, -1, opp.name, false, opp);
   player.onAct = playerActed;                  // feed the adaptive-AI tracker
@@ -1978,7 +2313,7 @@ function endRound(winner, banner) {
   game.result = game.matchOver ? (game.wins[0] >= 2 ? 'YOU WIN' : 'YOU LOSE')
     : winner === player ? 'ROUND TO YOU' : winner === enemy ? 'ROUND TO ' + enemy.name : 'DRAW';
   Object.assign(game, { state: 'ko', t: 0, banner });
-  Sound.gong();
+  if (banner === 'K.O.') Sound.koBell(); else Sound.bell();   // huge bell + near-silence on K.O.
   saveProfile();
 }
 
@@ -2003,7 +2338,7 @@ function realUpdate(dt) {
   if (aiMsg) { aiMsg.life += dt; if (aiMsg.life > 3.3) aiMsg = null; }
 
   if (game.state === 'intro') {
-    if (game.t > 0.9 && !game.gonged) { game.gonged = true; Sound.gong(); }
+    if (game.t > 0.9 && !game.gonged) { game.gonged = true; Sound.dholHit(); }   // FIGHT!
     if (game.t > 1.8) {
       game.state = 'fight'; game.t = 0;
       if (game.round === 1 && model.life.fights > 0)
@@ -2014,7 +2349,10 @@ function realUpdate(dt) {
     const w = game.roundWinner;
     if (w && !w.ko && game.t > 1.2) w.forcePose = 'victory';
     if (game.t > 3.0) {
-      if (game.matchOver) { game.state = 'end'; game.t = 0; finalizeMatch(); }
+      if (game.matchOver) {
+        game.state = 'end'; game.t = 0; finalizeMatch();
+        if (playerWonMatch()) Sound.victory(); else { Sound.defeat(); Sound.setTrack('story'); }
+      }
       else { game.round++; startRound(); }
     }
   }
@@ -2055,6 +2393,10 @@ function step() {
   enemy.update(ein, player);
   separate(player, enemy);
 
+  if (fighting && player.hp > 0 && player.hp < player.maxHp * 0.25) {   // low health heartbeat
+    game.hbT = (game.hbT || 0) - STEP;
+    if (game.hbT <= 0) { game.hbT = 0.95; Sound.heartbeat(); }
+  }
   if (fighting) {
     const full = player.energy >= MAX_EN;      // track how often Shadow Strike was available
     if (full && !fightStats.wasFull) fightStats.specialReady++;
@@ -2525,7 +2867,15 @@ function drawMenuButtons(m, cx0, y0, gap, w = 320, h = 58, horiz = false) {
     ctx.strokeStyle = sel ? '#ffd27a' : '#6b4a3a'; ctx.lineWidth = 2;
     ctx.strokeRect(-w / 2, -h / 2, w, h);
     ctx.restore();
-    text(it.label, cx, y + 2, 34, sel ? '#fff3dc' : '#c9b49a', 'center', BRUSH);
+    if (it.slider) {                                 // volume slider: label + bar (A/D or click to change)
+      const v = save.vol[it.slider], bx = cx - w * 0.05, bw = w * 0.48, by = y - 6;
+      text(it.label, cx - w * 0.27, y + 2, Math.min(28, h * 0.56), sel ? '#fff3dc' : '#c9b49a', 'center', BRUSH);
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx, by, bw, 12);
+      ctx.fillStyle = sel ? '#ffd27a' : '#b08850'; ctx.fillRect(bx, by, bw * v, 12);
+      ctx.strokeStyle = '#d8b06a'; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bw, 12);
+      text(Math.round(v * 100) + '%', bx + bw + 8, y, 14, '#e8d8c8', 'left');
+      it.bar = { x: bx - 4, y: by - 12, w: bw + 8, h: 36, x0: bx, w0: bw };
+    } else text(it.label, cx, y + 2, Math.min(34, h * 0.62), sel ? '#fff3dc' : '#c9b49a', 'center', BRUSH);
     if (sel) {
       text('◆', cx - w / 2 - 6, y, 18, '#ffd27a');
       text('◆', cx + w / 2 + 6, y, 18, '#ffd27a');
@@ -2887,7 +3237,8 @@ function renderBattle() {
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(0, 0, W, H);
     bigText('PAUSED', W / 2, 220, 96, '#f4e6c8');
-    drawMenuButtons(menus.pause, W / 2, 350, 76);
+    drawMenuButtons(menus.pause, W / 2, 318, 62, 340, 50);
+    text('W / S  select   ·   A / D  adjust volume   ·   P / Esc  resume', W / 2, H - 28, 15, 'rgba(244,230,200,0.6)');
   }
 }
 
@@ -2966,7 +3317,8 @@ function renderControls() {
     text(d, 575, y, 20, '#f4e6c8', 'left');
   });
   text('Shadow energy (blue bar) fills when you land hits and when you take damage.', W / 2, 596, 16, 'rgba(214,166,255,0.9)');
-  drawMenuButtons(menus.controls, W / 2, 640, 0, 220, 46);
+  drawMenuButtons(menus.controls, W / 2, 640, 300, 270, 44, true);
+  text('W / S  select   ·   A / D  adjust volume   ·   ENTER on BACK', W / 2, H - 16, 14, 'rgba(244,230,200,0.6)');
 }
 
 /* ---- CUSTOMIZATION SCREEN (layout follows the reference sheet's "Customization Options" panel) ---- */
@@ -3207,6 +3559,7 @@ function playCutscene(panels, onDone) {
   cs = { panels, i: -1, onDone, done: false, fx: [], actors: {} };
   nextPanel();
   Sound.setMood('story');
+  Sound.setAmbience(null);
 }
 function nextPanel() {
   cs.i++;
@@ -3255,8 +3608,10 @@ function runSteps(p, dt) {
       return;
     }
     if (s.say || s.narrate) {
-      if (!cs.line || cs.line.src !== s)
+      if (!cs.line || cs.line.src !== s) {
+        if (s.say) Sound.page();                        // page-turn between dialogue lines
         cs.line = { src: s, who: s.say ? s.say[0] : null, text: s.say ? s.say[1] : s.narrate, cps: s.cps || 28, t: 0, hold: s.hold != null ? s.hold : 2.4, shout: !!s.shout };
+      }
       cs.line.t += dt; dt = 0;
       if (cs.line.t >= cs.line.text.length / cs.line.cps + cs.line.hold) { cs.line = null; cs.si++; cs.st = 0; continue; }
       return;
@@ -4018,8 +4373,28 @@ function frame(now) {
     if (scene === 'vs') { updateEnv(dt, currentOpp()); if (sceneT > 0.8) vsDlg.t += dt; }
   }
   if (n >= 5) acc = 0;
+  Sound.pitch = scene === 'battle' && game.timeScale < 1 ? 0.75 : 1;   // slow-mo pitches sounds down
+  typingSounds();
   render();
   requestAnimationFrame(frame);
+}
+
+// very quiet typewriter ticks while dialogue / story text types out
+let typeKey = null, typeN = 0;
+function typingSounds() {
+  let key = null, n = 0, len = 0;
+  if (scene === 'vs' && sceneT > 0.8) {
+    const l = currentOpp().lines[vsDlg.i];
+    if (l) { key = 'vs' + story.stage + '-' + vsDlg.i; n = Math.floor(vsDlg.t * 40); len = l.text.length; }
+  } else if (scene === 'cutscene' && cs && !cs.done) {
+    const L = cs.line, p = cs.panels[cs.i];
+    if (L) { key = L.src; n = Math.floor(L.t * L.cps); len = L.text.length; }
+    else if (p && p.text) { key = p; n = Math.floor((cs.t - 0.5) * (p.cps || 28)); len = p.text.length; }
+  } else if (scene === 'battle' && game.state === 'outro') {
+    key = 'outro'; n = Math.floor((game.t - 0.4) * 32); len = currentOpp().defeat.length;
+  }
+  if (key !== typeKey) { typeKey = key; typeN = n; return; }
+  if (key && n <= len && n - typeN >= 2) { Sound.typeTick(); typeN = n; }
 }
 
 if (document.fonts && document.fonts.load) document.fonts.load('40px "Permanent Marker"').catch(() => {});
