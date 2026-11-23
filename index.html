@@ -62,61 +62,63 @@ const LEN = { torso: 60, neck: 8, head: 15, ua: 32, la: 32, ul: 44, ll: 44 };
    ========================================================================= */
 const PLAYER_PROFILE = {
   look: 'headband', hp: 100, dmgMult: 1, speed: 1, atkSpeed: 1, size: 1, thick: 1,
-  perfectChance: 1, energyMult: 1, eye: null,
+  perfectChance: 1, energyMult: 1, eye: null, thread: true,   // red thread from Meera on his wrist
   tail: { color: '#d11a1a', n: 8, seg: 9, w0: 5, w1: 1.5, ax: -14, ay: -4, grav: 0.22, wind: 0.35 },
 };
 
 const OPPONENTS = [
   {
-    name: 'RONIN', tag: 'EASY', learn: 0, look: 'hat', bg: 0, hp: 100, dmgMult: 0.9, speed: 0.8, atkSpeed: 0.85,
+    name: 'BHAIRAV', tag: 'EASY', learn: 0, look: 'hat', bg: 0, img: 0, hp: 100, dmgMult: 0.9, speed: 0.8, atkSpeed: 0.85,
     size: 1, thick: 1, perfectChance: 0.05, energyMult: 0.8, eye: '#ff9a3c',
-    role: 'Former warrior of the Shogun',
+    role: 'Former warrior of Raktasur',
     lines: [
       { who: 'opp', text: 'Still chasing ghosts, little warrior?' },
       { who: 'opp', text: 'Your village died because it was weak.' },
-      { who: 'kaito', text: "Then I'll show you what its people were made of." },
+      { who: 'veer', text: "Then I'll show you what its people were made of." },
     ],
     defeat: 'I... thought strength was everything.',
     ai: { block: 0.12, react: [8, 14], combo: 0.08, kick: 0.35, cd: [70, 120], special: 0.02, specialRange: 260, jump: 0.002 },
   },
   {
-    name: 'VIPER', tag: 'MEDIUM', learn: 0.3, look: 'ponytail', bg: 1, hp: 100, dmgMult: 1, speed: 1.25, atkSpeed: 1.15,
+    name: 'NAAGINI', tag: 'MEDIUM', learn: 0.3, look: 'ponytail', bg: 1, img: 1, hp: 100, dmgMult: 1, speed: 1.25, atkSpeed: 1.15,
     size: 1, thick: 0.82, perfectChance: 0.15, energyMult: 1, eye: '#c6ff6a',
     tail: { color: '#060304', n: 11, seg: 10, w0: 8, w1: 2.5, ax: -11, ay: -11, grav: 0.5, wind: 0.12 },
-    role: "The Shogun's assassin",
+    role: "Raktasur's assassin",
     lines: [
       { who: 'opp', text: 'You should have stayed buried with your village.' },
       { who: 'opp', text: "I don't remember the faces of those I kill." },
-      { who: 'kaito', text: 'But I remember every life you took.' },
+      { who: 'veer', text: 'But I remember every life you took.' },
     ],
-    defeat: 'The Shogun... will not fall so easily.',
+    defeat: 'Raktasur... will not fall so easily.',
     ai: { block: 0.25, react: [5, 11], combo: 0.4, kick: 0.6, cd: [36, 70], special: 0.06, specialRange: 300, jump: 0.006 },
   },
   {
-    name: 'SHOGUN', tag: 'FINAL BOSS', learn: 1, look: 'helmet', bg: 2, hp: 150, dmgMult: 1.3, speed: 1, atkSpeed: 1,
+    name: 'RAKTASUR', tag: 'FINAL BOSS', learn: 1, look: 'helmet', bg: 2, img: 2, hp: 150, dmgMult: 1.3, speed: 1, atkSpeed: 1,
     size: 1.15, thick: 1.3, perfectChance: 0.45, energyMult: 1.4, eye: '#ff2a2a',
     role: 'The warlord who burned your village',
     lines: [
       { who: 'opp', text: 'Look at you. Still fighting for the dead.' },
       { who: 'opp', text: 'You think defeating me will bring them back?' },
-      { who: 'kaito', text: "No. But I'll make sure you never take another life." },
+      { who: 'veer', text: "No. But I'll make sure you never take another life." },
     ],
     defeat: 'You... have become stronger than I imagined.',
     ai: { block: 0.55, react: [2, 7], combo: 0.35, kick: 0.4, cd: [25, 55], special: 0.25, specialRange: 380, jump: 0.002 },
   },
 ];
 
-// Story-only characters (cutscenes)
-const YUNA_PROFILE = {
+// Story-only characters (cutscenes). Player = VEER, his little sister = MEERA (long braid).
+const MEERA_PROFILE = {
   look: 'ponytail', hp: 1, dmgMult: 1, speed: 1, atkSpeed: 1, size: 0.68, thick: 0.75,
   perfectChance: 0, energyMult: 1, eye: null,
-  tail: { color: '#060304', n: 8, seg: 7, w0: 6, w1: 2, ax: -11, ay: -11, grav: 0.45, wind: 0.15 },
+  tail: { color: '#060304', n: 13, seg: 7, w0: 6, w1: 2, ax: -12, ay: -6, grav: 0.6, wind: 0.08 },   // braid
 };
 const SOLDIER_PROFILE = {
   look: 'hat', hp: 1, dmgMult: 1, speed: 1, atkSpeed: 1, size: 0.95, thick: 1,
   perfectChance: 0, energyMult: 1, eye: null,
 };
-const KAITO_WIND = Object.assign({}, PLAYER_PROFILE, { tail: Object.assign({}, PLAYER_PROFILE.tail, { wind: 0.85, n: 10 }) });
+const VEER_WIND = Object.assign({}, PLAYER_PROFILE, { tail: Object.assign({}, PLAYER_PROFILE.tail, { wind: 0.85, n: 10 }) });
+// Veer's long red scarf (picked up in the last intro scene)
+const SCARF_TAIL = { color: '#c0141a', n: 15, seg: 9, w0: 9, w1: 3, ax: -8, ay: 22, grav: 0.12, wind: 0.95 };
 
 /* =========================================================================
    3. SAVE DATA (localStorage)
@@ -286,6 +288,16 @@ const Sound = {
     this.noise(t, 0.1, { filter: 'bandpass', freq: 600, gain: 0.3 });
   },
   blip() { if (this.ok) this.tone('triangle', 660, this.ctx.currentTime, 0.07, { gain: 0.12 }); },
+  drum() {                                    // distant war drum (intro)
+    if (!this.ok) return;
+    const t = this.ctx.currentTime;
+    this.tone('sine', 78, t, 0.65, { to: 38, gain: 0.75 });
+    this.noise(t, 0.12, { filter: 'lowpass', freq: 240, gain: 0.4 });
+  },
+  setMusicLevel(v, tc = 0.5) {                // 0 = silence (story moments), 1 = normal
+    this.musicLevel = v;
+    if (this.music) this.music.gain.setTargetAtTime(0.28 * v, this.ctx.currentTime, tc);
+  },
   select() { if (this.ok) this.tone('triangle', 880, this.ctx.currentTime, 0.14, { to: 1320, gain: 0.16 }); },
   // ---- music ----
   schedule() {
@@ -340,7 +352,7 @@ function toggleMute() { Sound.init(); Sound.setMuted(!Sound.muted); }
    ========================================================================= */
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const bgCanvases = [0, 1, 2, 3].map(() => document.createElement('canvas'));
+const bgCanvases = [0, 1, 2, 3, 4, 5].map(() => document.createElement('canvas'));
 let scale = 1;
 
 function resize() {
@@ -356,8 +368,171 @@ function resize() {
     bc.width = canvas.width; bc.height = canvas.height;
     drawBackground(bc.getContext('2d'), scale, i);
   });
+  IMG.bg.concat(IMG.intro).forEach(prerenderImg);   // image backgrounds follow the window size too
 }
 addEventListener('resize', resize);
+
+/* =========================================================================
+   5b. IMAGE BACKGROUNDS (assets/bg1-3.jpg, assets/intro1-5.jpg)
+   Plain <img> loading works from file:// (double-click). Each loaded image is
+   pre-rendered once per window size: "cover" fit + darkening + vignette.
+   If an image is missing / fails, the canvas-drawn background is used instead.
+   ========================================================================= */
+const IMG = { bg: [], intro: [] };
+function loadImg(list, i, src) {
+  const o = { ok: false, img: new Image(), cv: null, rect: null };
+  list[i] = o;
+  o.img.onload = () => { o.ok = true; prerenderImg(o); };
+  o.img.onerror = () => { o.ok = false; };            // -> canvas fallback
+  o.img.src = src;
+}
+[1, 2, 3].forEach((n, i) => loadImg(IMG.bg, i, `assets/bg${n}.jpg`));
+[1, 2, 3, 4, 5].forEach((n, i) => loadImg(IMG.intro, i, `assets/intro${n}.jpg`));
+
+function prerenderImg(o) {
+  if (!o || !o.ok || canvas.width < 2) return;
+  const iw = o.img.naturalWidth, ih = o.img.naturalHeight;
+  if (!iw || !ih) return;
+  const cv = o.cv || document.createElement('canvas');
+  cv.width = canvas.width; cv.height = canvas.height;
+  const c = cv.getContext('2d');
+  const s = Math.max(cv.width / iw, cv.height / ih);           // cover: fill + crop overflow
+  const dw = iw * s, dh = ih * s;
+  c.drawImage(o.img, (cv.width - dw) / 2, (cv.height - dh) / 2, dw, dh);
+  c.fillStyle = 'rgba(4,4,16,0.3)';                            // darken so silhouettes read
+  c.fillRect(0, 0, cv.width, cv.height);
+  const vg = c.createRadialGradient(cv.width / 2, cv.height * 0.55, cv.height * 0.3, cv.width / 2, cv.height * 0.55, cv.height);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.5)');
+  c.fillStyle = vg; c.fillRect(0, 0, cv.width, cv.height);
+  o.cv = cv;
+  const ls = Math.max(W / iw, H / ih);                         // image rect in logical units (for effects)
+  o.rect = { x: (W - iw * ls) / 2, y: (H - ih * ls) / 2, w: iw * ls, h: ih * ls };
+}
+const stageImg = opp => { const o = IMG.bg[opp.img]; return o && o.ok && o.cv ? o : null; };
+const introImg = i => { const o = IMG.intro[i]; return i != null && o && o.ok && o.cv ? o : null; };
+
+// Effects tuned to each image (normalized image coords): braziers, glowing windows, fog band, waterfall spray
+const BG_FX = [
+  { // bg1: moonlit palace + Shiva statue
+    torches: [[0.074, 0.555], [0.922, 0.555]],
+    lamps: [[0.66, 0.31], [0.72, 0.26], [0.79, 0.3], [0.29, 0.64], [0.76, 0.65], [0.36, 0.65]],
+    fog: { y: 0.6, h: 0.16, a: 0.28 }, mist: [[0.63, 0.56], [0.81, 0.5]], fall: 'petals',
+  },
+  { // bg2: jungle temple ruins + waterfall
+    torches: [[0.072, 0.565], [0.927, 0.565]],
+    lamps: [],
+    fog: { y: 0.58, h: 0.2, a: 0.36 }, mist: [[0.535, 0.5], [0.24, 0.66]], fall: 'embers',
+  },
+  { // bg3 (when provided)
+    torches: [], lamps: [], fog: { y: 0.65, h: 0.14, a: 0.22 }, mist: [], fall: 'embers',
+  },
+];
+
+// soft fog sprite (made once), tiled and scrolled
+const fogSprite = (() => {
+  const c = document.createElement('canvas'); c.width = 640; c.height = 240;
+  const g = c.getContext('2d');
+  for (let i = 0; i < 40; i++) {
+    const x = Math.random() * 640, y = 95 + Math.random() * 50, r = 40 + Math.random() * 50;
+    const rg = g.createRadialGradient(x, y, 0, x, y, r);
+    rg.addColorStop(0, 'rgba(190,200,235,0.5)'); rg.addColorStop(1, 'rgba(190,200,235,0)');
+    g.fillStyle = rg; g.fillRect(x - r, y - r, r * 2, r * 2);
+    if (x < r) { g.save(); g.translate(640, 0); g.fillRect(x - r, y - r, r * 2, r * 2); g.restore(); }   // seamless wrap
+    if (x > 640 - r) { g.save(); g.translate(-640, 0); g.fillRect(x - r, y - r, r * 2, r * 2); g.restore(); }
+  }
+  g.globalCompositeOperation = 'destination-in';     // fade top/bottom so the band has no hard edges
+  const m = g.createLinearGradient(0, 0, 0, 240);
+  m.addColorStop(0, 'rgba(0,0,0,0)'); m.addColorStop(0.35, 'rgba(0,0,0,1)');
+  m.addColorStop(0.65, 'rgba(0,0,0,1)'); m.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = m; g.fillRect(0, 0, 640, 240);
+  return c;
+})();
+
+let envFx = [], envT = 0;
+function updateEnv(dt, opp) {
+  envT += dt;
+  const im = opp && stageImg(opp);
+  if (!im) { envFx.length = 0; return; }
+  const fx = BG_FX[opp.img], r = im.rect, k = dt * 60;
+  for (const [nx, ny] of fx.torches) {
+    const x = r.x + nx * r.w, y = r.y + ny * r.h;
+    if (Math.random() < 0.7 * k) envFx.push({ type: 'flame', x: x + (Math.random() - 0.5) * 16, y: y - 8, vx: (Math.random() - 0.5) * 0.5, vy: -0.9 - Math.random() * 1.3, r: 1.5 + Math.random() * 2.5, life: 0, max: 25 + Math.random() * 30 });
+  }
+  if (fx.fall === 'petals' && Math.random() < 0.07 * k)
+    envFx.push({ type: 'petal', x: Math.random() * W, y: -10, vx: 0.3 + Math.random() * 0.6, vy: 0.5 + Math.random() * 0.6, r: 2.5 + Math.random() * 2, rot: Math.random() * 6, life: 0, max: 1000 });
+  if (Math.random() < 0.07 * k)
+    envFx.push({ type: 'ember', x: Math.random() * W, y: H * 0.5 + Math.random() * H * 0.45, vx: (Math.random() - 0.3) * 0.4, vy: -0.25 - Math.random() * 0.6, r: 0.8 + Math.random() * 1.6, life: 0, max: 320 });
+  for (const [nx, ny] of fx.mist) if (Math.random() < 0.06 * k)
+    envFx.push({ type: 'mist', x: r.x + nx * r.w + (Math.random() - 0.5) * 50, y: r.y + ny * r.h + Math.random() * 30, vx: (Math.random() - 0.5) * 0.3, vy: -0.12, r: 18 + Math.random() * 22, life: 0, max: 220 });
+  for (const p of envFx) {
+    p.life += k; p.x += p.vx * k; p.y += p.vy * k;
+    if (p.type === 'petal') { p.rot += 0.03 * k; p.vx += Math.sin(p.life * 0.02) * 0.01 * k; }
+    if (p.type === 'mist') p.r += 0.12 * k;
+    if (p.type === 'ember') p.vx += Math.sin(p.life * 0.05) * 0.015 * k;
+  }
+  envFx = envFx.filter(p => p.life < p.max && p.y < H + 20);
+  if (envFx.length > 350) envFx.splice(0, envFx.length - 350);
+}
+
+// Draws effects in background-image space (caller sets the transform)
+function drawEnvFx(opp, im) {
+  const fx = BG_FX[opp.img], r = im.rect, t = envT;
+  ctx.save();
+  // drifting fog (two layers, different speeds)
+  const fy = r.y + fx.fog.y * r.h, fh = fx.fog.h * r.h;
+  for (let l = 0; l < 2; l++) {
+    const fw = 900, off = (t * (10 + l * 7)) % fw;
+    ctx.globalAlpha = fx.fog.a * (l ? 0.6 : 1);
+    for (let i = -1; i < 3; i++) ctx.drawImage(fogSprite, i * fw - off * (l ? -1 : 1), fy + l * fh * 0.4 - fh * 0.8, fw, fh * 2.4);
+  }
+  ctx.globalAlpha = 1;
+  for (const p of envFx) {
+    const a = (1 - p.life / p.max) * Math.min(1, p.life / 15);
+    if (p.type === 'mist') {                     // soft waterfall spray
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+      g.addColorStop(0, `rgba(200,210,240,${0.09 * a})`); g.addColorStop(1, 'rgba(200,210,240,0)');
+      ctx.fillStyle = g; ctx.fillRect(p.x - p.r, p.y - p.r, p.r * 2, p.r * 2);
+    }
+    else if (p.type === 'petal') {
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.fillStyle = `rgba(175,18,32,${0.85 * a})`;
+      ctx.beginPath(); ctx.ellipse(0, 0, p.r, p.r * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  }
+  // warm light: flickering braziers and glowing windows
+  ctx.globalCompositeOperation = 'lighter';
+  fx.torches.forEach(([nx, ny], i) => {
+    const x = r.x + nx * r.w, y = r.y + ny * r.h - 12;
+    const fl = 0.75 + 0.25 * Math.sin(t * 13 + i * 2) * Math.sin(t * 7.3 + i);
+    const g = ctx.createRadialGradient(x, y, 4, x, y, 150);
+    g.addColorStop(0, `rgba(255,170,70,${0.42 * fl})`); g.addColorStop(1, 'rgba(255,90,30,0)');
+    ctx.fillStyle = g; ctx.fillRect(x - 150, y - 150, 300, 300);
+  });
+  fx.lamps.forEach(([nx, ny], i) => {
+    const x = r.x + nx * r.w, y = r.y + ny * r.h;
+    const fl = 0.7 + 0.3 * Math.sin(t * 5 + i * 1.7);
+    const g = ctx.createRadialGradient(x, y, 1, x, y, 26);
+    g.addColorStop(0, `rgba(255,170,80,${0.22 * fl})`); g.addColorStop(1, 'rgba(255,120,40,0)');
+    ctx.fillStyle = g; ctx.fillRect(x - 26, y - 26, 52, 52);
+  });
+  for (const p of envFx) {
+    const a = (1 - p.life / p.max);
+    if (p.type === 'flame') { ctx.fillStyle = `rgba(255,${150 + (a * 90 | 0)},60,${0.8 * a})`; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (0.5 + a * 0.5), 0, Math.PI * 2); ctx.fill(); }
+    else if (p.type === 'ember') { ctx.fillStyle = `rgba(255,140,60,${0.7 * a})`; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); }
+  }
+  ctx.restore();
+}
+
+// Static backdrop for menus/VS: image if available, else the canvas background
+function drawStageBackdrop(opp) {
+  const im = stageImg(opp);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (!im) { ctx.drawImage(bgCanvases[opp.bg], 0, 0); return; }
+  ctx.drawImage(im.cv, 0, 0);
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  drawEnvFx(opp, im);
+}
 
 /* =========================================================================
    6. BACKGROUNDS  (sunset / dusk / blood moon)
@@ -392,6 +567,9 @@ const STAGES = [
     line: 'rgba(255,210,170,0.3)', stars: 15, ember: '255,230,200', pagoda: -500, torii: -500,
   },
 ];
+// 4/5: story variants of sunset / blood moon without the pagoda + torii (Indian village scenes draw their own)
+STAGES.push(Object.assign({}, STAGES[0], { pagoda: -500, torii: -500 }));
+STAGES.push(Object.assign({}, STAGES[2], { pagoda: -500, torii: -500 }));
 
 let seed = 1;
 function srand(n) { seed = n; }
@@ -580,6 +758,19 @@ const POSES = {
   sitLaugh:   P(-0.12, 0.90, -0.20, 0.50, -0.10, 1.50, -0.15,  1.35, -0.35, -0.25),
   wave:       P(0.02,  2.70, 0.60,  0.30, 0.20,  0.30, -0.30, -0.30, -0.10, -0.10),
   lookUp:     P(-0.05, 0.40, 0.30,  0.30, 0.30,  0.35, -0.30, -0.35, -0.10, -0.25),
+  // Phase 7 intro: Kalaripayattu forms, gestures
+  kalariLow:  P(0.35,  1.60, 0.20, -1.20, 0.30,  1.20, -0.40, -0.90, -0.10),
+  kalariKick: P(-0.25, 1.00, 1.20, -0.80, 0.40,  2.60,  0.10, -0.05,  0.00),
+  kalariGuard:P(0.10,  2.20, 1.00,  0.60, 1.60,  0.60, -0.80, -0.50, -0.30),
+  standTall:  P(0.02,  0.50, 0.30,  0.30, 0.30,  0.30, -0.30, -0.30, -0.10),
+  offerArm:   P(0.05,  1.45, 0.10,  0.35, 0.40,  0.35, -0.30, -0.35, -0.10, 0.25),
+  tieThread:  P(0.15,  1.30, 0.90,  1.10, 1.00,  0.35, -0.30, -0.35, -0.10, 0.20),
+  laugh:      P(-0.15, 0.60, 0.80,  0.40, 0.90,  0.35, -0.30, -0.35, -0.10, -0.30),
+  push:       P(0.45,  1.75, 0.05,  1.60, 0.10,  0.80, -0.50, -0.70, -0.10),
+  lift:       P(0.10,  2.80, 0.30,  2.60, 0.40,  1.50, -1.50,  0.10, -1.67),
+  reachUp:    P(-0.30, 2.40, 0.30, -2.00, 0.20,  0.40, -0.10,  0.10, -0.10, -0.40),
+  lookWrist:  P(0.20,  1.10, 1.90,  0.30, 0.40,  1.50, -1.50,  0.10, -1.67, 0.45),
+  tieWrist:   P(0.15,  1.20, 1.50,  1.20, 1.30,  0.35, -0.30, -0.35, -0.10, 0.35),
 };
 // [windup pose, strike pose] for each attack
 const ATTACK_POSES = {
@@ -607,9 +798,9 @@ addEventListener('keydown', e => {
   const c = e.code;
   if (c === 'KeyM') { toggleMute(); return; }
   if (c === 'KeyI' && scene === 'battle') { save.vision = !save.vision; writeSave(); Sound.blip(); return; }
-  if (scene === 'cutscene') {                 // story: Enter/Esc skip all, Space next panel
-    if (c === 'Enter' || c === 'NumpadEnter' || c === 'Escape') finishCutscene();
-    else if (c === 'Space') advancePanel();
+  if (scene === 'cutscene') {                 // story: Esc skips all; Enter/Space advance dialogue/panel
+    if (c === 'Escape') finishCutscene();
+    else if (isConfirm(c)) csAdvance();
     return;
   }
 
@@ -661,7 +852,7 @@ canvas.addEventListener('mousedown', e => {
     if (i >= 0) { m.sel = i; activate(m); }
     return;
   }
-  if (scene === 'cutscene') advancePanel();
+  if (scene === 'cutscene') csAdvance();
   else if (scene === 'vs') advanceVS();
   else if (scene === 'victory') goMenu();
   else if (scene === 'battle' && game.state === 'outro') advanceOutro(false);
@@ -694,6 +885,7 @@ class Fighter {
       ko: false, landedKO: false, launched: false, downT: 0, getupT: 0, fall: 0,
       combo: 0, blockStart: -99, prevBlock: false, forcePose: null,
       jumpId: 0, onAct: null, blockHeld: false, prevCrouch: false, perfectBoost: 0, boostUntil: 0,
+      thread: !!prof.thread,
       walkPhase: 0, t: Math.random() * 100, ghosts: [], ghostTick: 0,
     });
     this.pose = POSES.idleA.slice();
@@ -704,6 +896,14 @@ class Fighter {
       const a = this.tailAnchor(), seg = prof.tail.seg;
       for (let i = 0; i < prof.tail.n; i++) this.tail.push({ x: a.x - facing * i * seg, y: a.y + i * 3, px: a.x - facing * i * seg, py: a.y + i * 3 });
     }
+  }
+
+  // swap the cloth chain (e.g. headband -> long scarf) and rebuild it
+  setTail(cfg) {
+    this.prof = Object.assign({}, this.prof, { tail: cfg });
+    const a = this.tailAnchor();
+    this.tail = [];
+    for (let i = 0; i < cfg.n; i++) this.tail.push({ x: a.x - this.facing * i * cfg.seg, y: a.y + i * 2, px: a.x - this.facing * i * cfg.seg, py: a.y + i * 2 });
   }
 
   get attackPhase() {
@@ -1904,6 +2104,17 @@ function drawFighter(f) {
   if (f.tail.length && f.look === 'ponytail') drawTail(f);
   drawBody(k, f.thick);
   if (f.weapon) drawWeapon(f, k);
+  if (f.thread) {                                   // Meera's red thread on the front wrist
+    const e = k.eF, h = k.hF, dx = h.x - e.x, dy = h.y - e.y, d = Math.hypot(dx, dy) || 1;
+    const px = e.x + dx * 0.8, py = e.y + dy * 0.8, nx = -dy / d * 6.5 * f.size, ny = dx / d * 6.5 * f.size;
+    ctx.save();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#e3202a'; ctx.lineWidth = 2.6 * f.size; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(px - nx, py - ny); ctx.lineTo(px + nx, py + ny); ctx.stroke();
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(px + nx, py + ny); ctx.lineTo(px + nx * 1.3 + 2, py + ny * 1.3 + 5); ctx.stroke();
+    ctx.restore();
+  }
   ctx.shadowBlur = 0;
   ctx.translate(k.head.x, k.head.y);
   ctx.rotate(k.rot);
@@ -2324,15 +2535,21 @@ function drawVision() {
 }
 
 function renderBattle() {
-  const st = currentOpp().bg;
+  const opp = currentOpp(), st = opp.bg, im = stageImg(opp);
   const z = cam.z;
-  // background with half-strength parallax zoom
-  const bz = 1 + (z - 1) * 0.5;
+  // background with half-strength parallax zoom (+ slow ambient drift on image backgrounds)
+  let bz = 1 + (z - 1) * 0.5;
+  if (im) bz += 0.03 + 0.012 * Math.sin(envT * 0.13);
   const bhalf = W / (2 * bz);
-  const bcx = clamp(W / 2 + (cam.x - W / 2) * 0.5, bhalf, W - bhalf);
+  const drift = im ? Math.sin(envT * 0.09) * 10 : 0;
+  const bcx = clamp(W / 2 + (cam.x - W / 2) * 0.5 + drift, bhalf, W - bhalf);
   const sx = bcx - bhalf, sy = GROUND - GROUND / bz;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(bgCanvases[st], sx * scale, sy * scale, (W / bz) * scale, (H / bz) * scale, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(im ? im.cv : bgCanvases[st], sx * scale, sy * scale, (W / bz) * scale, (H / bz) * scale, 0, 0, canvas.width, canvas.height);
+  if (im) {                                   // torch light, fog, embers, petals — in image space
+    ctx.setTransform(scale * bz, 0, 0, scale * bz, -sx * scale * bz, -sy * scale * bz);
+    drawEnvFx(opp, im);
+  }
 
   if (game.superT > 0) {   // screen darken for Shadow Strike activation
     ctx.fillStyle = `rgba(6,0,16,${0.62 * Math.min(1, game.superT / 0.25)})`;
@@ -2343,7 +2560,16 @@ function renderBattle() {
   const shx = shk ? (Math.random() - 0.5) * shk * 2 : 0;
   const shy = shk ? (Math.random() - 0.5) * shk * 2 : 0;
   ctx.setTransform(scale * z, 0, 0, scale * z, (W / 2 - cam.x * z + shx) * scale, (GROUND - GROUND * z + shy) * scale);
-  drawEmbers(st);
+  if (!im) drawEmbers(st);
+  else {                                      // soft warm glow behind the fighters so they pop
+    const mx = (player.x + enemy.x) / 2;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(mx, GROUND - 90, 20, mx, GROUND - 90, 360);
+    g.addColorStop(0, 'rgba(255,170,100,0.2)'); g.addColorStop(1, 'rgba(255,120,60,0)');
+    ctx.fillStyle = g; ctx.fillRect(mx - 360, GROUND - 450, 720, 640);
+    ctx.restore();
+  }
   drawShadow(enemy); drawShadow(player);
   drawGhosts(enemy); drawGhosts(player);
   // draw the attacker on top so the striking limb is visible
@@ -2446,7 +2672,7 @@ function renderControls() {
 
 function renderVS() {
   const opp = currentOpp();
-  drawBg(opp.bg);
+  drawStageBackdrop(opp);                    // same arena image as the upcoming fight
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.fillRect(0, 0, W, H);
@@ -2468,15 +2694,15 @@ function renderVS() {
 
   const pop = sceneT < 0.45 ? 0 : 1 + Math.max(0, 0.7 - sceneT) * 2;
   if (pop) bigText('VS', W / 2, 330, 150, '#ff4b2b', pop);
-  bigText('KAITO', 330 - off, 660, 52, '#f4e6c8');
+  bigText('VEER', 330 - off, 660, 52, '#f4e6c8');
   bigText(opp.name, 950 + off, 660, 64, '#ff5a3c');
   // pre-fight dialogue (speech boxes, Enter/click to advance)
   const line = opp.lines[vsDlg.i];
   if (sceneT > 0.8 && line) {
     ctx.save();
     ctx.globalAlpha = Math.min(1, (sceneT - 0.8) * 4);
-    const kaito = line.who === 'kaito';
-    drawSpeech(kaito ? 'KAITO' : opp.name, line.text, kaito ? 380 : 900, 82, 580, line.who, vsDlg.t * 40, kaito ? 330 : 950);
+    const veer = line.who === 'veer';
+    drawSpeech(veer ? 'VEER' : opp.name, line.text, veer ? 380 : 900, 82, 580, line.who, vsDlg.t * 40, veer ? 330 : 950);
     ctx.restore();
   }
   if (sceneT > 0.8) text('ENTER / CLICK  next     ·     ESC  skip to fight', W / 2, H - 20, 17, `rgba(244,230,200,${0.45 + 0.3 * Math.sin(sceneT * 4)})`);
@@ -2539,6 +2765,7 @@ function nextPanel() {
   if (cs.i >= cs.panels.length) { finishCutscene(); return; }
   const p = cs.panels[cs.i];
   cs.t = 0; cs.out = null; cs.fx = [];
+  cs.si = 0; cs.st = 0; cs.line = null; cs.stepsDone = false; cs.endT = 0; cs.dynFires = null; cs.camX = null;
   cs.actors = p.setup ? p.setup() : {};
   cs.dur = Math.max(p.dur || 6, p.text ? p.text.length / (p.cps || 28) + 2.6 : 0);
   Sound.setFire(!!p.fire);
@@ -2548,17 +2775,82 @@ function finishCutscene() {               // safe to call many times (skip spam)
   if (!cs || cs.done) return;
   cs.done = true;
   Sound.setFire(false);
+  Sound.setMusicLevel(1, 0.3);
   Sound.setMood('battle');
   cs.onDone();
+}
+// Enter / Space / click: finish typing -> next line -> skip a pause -> next panel
+function csAdvance() {
+  if (!cs || cs.done) return;
+  const p = cs.panels[cs.i];
+  if (!p.steps) { advancePanel(); return; }
+  if (cs.line) {
+    const full = cs.line.text.length / cs.line.cps;
+    if (cs.line.t < full) cs.line.t = full + 0.01;
+    else { cs.line = null; cs.si++; cs.st = 0; }
+    return;
+  }
+  const s = p.steps[cs.si];
+  if (s && s.wait != null) { cs.st = s.wait; return; }
+  if (cs.stepsDone) advancePanel();
+}
+// Scripted panel timeline: {wait}, {do}, {until}, {say:[who,text]}, {narrate}
+function runSteps(p, dt) {
+  const steps = p.steps;
+  while (cs.si < steps.length) {
+    const s = steps[cs.si];
+    if (s.do) { s.do(cs.actors); cs.si++; cs.st = 0; continue; }
+    if (s.until) { if (s.until(cs.actors)) { cs.si++; cs.st = 0; continue; } return; }
+    if (s.wait != null) {
+      cs.st += dt; dt = 0;
+      if (cs.st >= s.wait) { cs.si++; cs.st = 0; continue; }
+      return;
+    }
+    if (s.say || s.narrate) {
+      if (!cs.line || cs.line.src !== s)
+        cs.line = { src: s, who: s.say ? s.say[0] : null, text: s.say ? s.say[1] : s.narrate, cps: s.cps || 28, t: 0, hold: s.hold != null ? s.hold : 2.4, shout: !!s.shout };
+      cs.line.t += dt; dt = 0;
+      if (cs.line.t >= cs.line.text.length / cs.line.cps + cs.line.hold) { cs.line = null; cs.si++; cs.st = 0; continue; }
+      return;
+    }
+    cs.si++;
+  }
+  cs.stepsDone = true;
+}
+// Actors with a .goal walk/run there (facing their direction) and then take .afterPose
+function moveActors(dt) {
+  for (const f of csFighters()) {
+    if (f.goal == null) continue;
+    const d = f.goal - f.x, dir = Math.sign(d) || 1, stepPx = (f.spd || 200) * dt;
+    f.facing = dir;
+    if (Math.abs(d) <= stepPx) {
+      f.x = f.goal; f.goal = null; f.forcePose = f.afterPose || 'idleA'; f.forceRate = 0.15; f.walk = false;
+    } else {
+      f.x += dir * stepPx;
+      const ph = Math.floor(cs.t * (f.walk ? 2.4 : 4.6)) % 2;
+      f.forcePose = f.walk ? (ph ? 'walkA' : 'walkB') : (ph ? 'runA' : 'runB');
+      f.forceRate = f.walk ? 0.15 : 0.32;
+    }
+  }
 }
 function updateCutscene(dt) {
   if (!cs || cs.done) return;
   const p = cs.panels[cs.i];
   cs.t += dt;
+  moveActors(dt);
   if (p.update) p.update(cs.actors, cs.t, dt);
+  if (p.follow) {                                  // camera follows an actor
+    const f = cs.actors[p.follow], half = W / (2 * p.cam[2]);
+    const tx = clamp(f.x, half, W - half);
+    cs.camX = cs.camX == null ? tx : cs.camX + (tx - cs.camX) * Math.min(1, dt * 3);
+  }
+  if (p.steps && cs.out === null) {
+    runSteps(p, dt);
+    if (cs.stepsDone) { cs.endT += dt; if (cs.endT >= (p.tail != null ? p.tail : 0.8)) { cs.out = 0.9; cs.outMax = 0.9; } }
+  }
   updateCsFx(p, dt);
   if (cs.out !== null) { cs.out -= dt; if (cs.out <= 0) nextPanel(); }
-  else if (cs.t >= cs.dur) { cs.out = 0.7; cs.outMax = 0.7; }
+  else if (!p.steps && cs.t >= cs.dur) { cs.out = 0.7; cs.outMax = 0.7; }
 }
 function csFighters() {
   if (!cs || cs.done) return [];
@@ -2573,7 +2865,10 @@ function csFighters() {
 // ---- cutscene particles: smoke, rising/falling embers, golden motes ----
 function updateCsFx(p, dt) {
   const k = dt * 60, fx = cs.fx;
-  if (p.fires) for (const [x, base, w] of p.fires) {
+  const fires = cs.dynFires || p.fires;             // scenes can ignite huts dynamically
+  if (p.fireflies && Math.random() < 0.06 * k) fx.push({ type: 'firefly', x: Math.random() * W, y: H * 0.45 + Math.random() * H * 0.35, vx: (Math.random() - 0.5) * 0.5, vy: (Math.random() - 0.5) * 0.3, r: 1.6 + Math.random() * 1.2, life: 0, max: 400, ph: Math.random() * 6 });
+  if (p.ash && Math.random() < 0.12 * k) fx.push({ type: 'ash', x: Math.random() * W, y: -10, vx: 0.4 + Math.random() * 0.5, vy: 0.4 + Math.random() * 0.5, r: 1 + Math.random() * 1.6, life: 0, max: 900 });
+  if (fires) for (const [x, base, w] of fires) {
     if (Math.random() < 0.22 * k) fx.push({ type: 'smoke', x: x + (Math.random() - 0.5) * w, y: base - 70 - Math.random() * 40, vx: 0.25 + Math.random() * 0.4, vy: -0.6 - Math.random() * 0.6, r: 14 + Math.random() * 16, life: 0, max: 220 + Math.random() * 100, a: 0.3 });
     if (Math.random() < 0.5 * k) fx.push({ type: 'ember', x: x + (Math.random() - 0.5) * w, y: base - 30 - Math.random() * 60, vx: (Math.random() - 0.3) * 1.2, vy: -1 - Math.random() * 2, r: 1 + Math.random() * 2, life: 0, max: 80 + Math.random() * 80 });
   }
@@ -2591,15 +2886,25 @@ function updateCsFx(p, dt) {
 }
 function drawCsFx() {
   ctx.save();
-  for (const f of cs.fx) if (f.type === 'smoke') {
-    const a = f.a * (1 - f.life / f.max) * Math.min(1, f.life / 25);
-    ctx.fillStyle = `rgba(18,8,12,${a})`;
+  for (const f of cs.fx) {
+    if (f.type === 'smoke') {
+      const a = f.a * (1 - f.life / f.max) * Math.min(1, f.life / 25);
+      ctx.fillStyle = `rgba(18,8,12,${a})`;
+    } else if (f.type === 'ash') ctx.fillStyle = `rgba(200,195,200,${0.5 * (1 - f.life / f.max)})`;
+    else continue;
     ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2); ctx.fill();
   }
   ctx.globalCompositeOperation = 'lighter';
   for (const f of cs.fx) {
-    if (f.type === 'smoke') continue;
-    const a = (1 - f.life / f.max) * (f.type === 'mote' ? 0.6 : 0.9);
+    if (f.type === 'smoke' || f.type === 'ash') continue;
+    let a = (1 - f.life / f.max) * (f.type === 'mote' ? 0.6 : 0.9);
+    if (f.type === 'firefly') {                      // blinking yellow-green
+      a = Math.min(1, f.life / 30) * (1 - f.life / f.max) * (0.5 + 0.5 * Math.sin(f.life * 0.08 + f.ph));
+      const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r * 5);
+      g.addColorStop(0, `rgba(230,255,140,${a})`); g.addColorStop(1, 'rgba(200,255,100,0)');
+      ctx.fillStyle = g; ctx.fillRect(f.x - f.r * 5, f.y - f.r * 5, f.r * 10, f.r * 10);
+      continue;
+    }
     ctx.fillStyle = f.type === 'mote' ? `rgba(255,220,150,${a})` : `rgba(255,${120 + (f.r * 30 | 0)},40,${a})`;
     ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2); ctx.fill();
   }
@@ -2657,6 +2962,125 @@ function drawBurning(list, t, broken, col = '#0d0206') {
     drawFire(x, base - h * 0.25, w, h * 1.1, t, i * 2.3);
   });
 }
+// ---- Indian village scenery (Phase 7 intro) ----
+function drawHut(x, base, w, h, col) {
+  ctx.fillStyle = col;
+  ctx.fillRect(x - w / 2, base - h, w, h);
+  ctx.beginPath();                                   // thatched roof with overhang
+  ctx.moveTo(x - w * 0.68, base - h + 10);
+  ctx.quadraticCurveTo(x - w * 0.2, base - h - h * 0.55, x, base - h - h * 0.85);
+  ctx.quadraticCurveTo(x + w * 0.2, base - h - h * 0.55, x + w * 0.68, base - h + 10);
+  ctx.closePath(); ctx.fill();
+}
+function drawCollapsedHut(x, base, w, col) {
+  ctx.fillStyle = col;
+  ctx.fillRect(x - w / 2, base - 40, w * 0.16, 40);
+  ctx.fillRect(x + w * 0.32, base - 62, w * 0.14, 62);
+  ctx.beginPath();                                   // fallen roof slab
+  ctx.moveTo(x - w * 0.62, base); ctx.lineTo(x - w * 0.3, base - 58); ctx.lineTo(x + w * 0.5, base - 30); ctx.lineTo(x + w * 0.62, base);
+  ctx.closePath(); ctx.fill();
+}
+function drawShikhara(x, base, s, col, ruined) {    // north-Indian temple tower
+  ctx.fillStyle = col;
+  ctx.fillRect(x - 110 * s, base - 40 * s, 220 * s, 40 * s);
+  ctx.fillRect(x - 70 * s, base - 110 * s, 140 * s, 70 * s);
+  ctx.beginPath();
+  ctx.moveTo(x - 62 * s, base - 110 * s);
+  if (ruined) {
+    ctx.lineTo(x - 58 * s, base - 200 * s); ctx.lineTo(x - 30 * s, base - 235 * s); ctx.lineTo(x - 10 * s, base - 212 * s);
+    ctx.lineTo(x + 12 * s, base - 250 * s); ctx.lineTo(x + 40 * s, base - 205 * s); ctx.lineTo(x + 62 * s, base - 110 * s);
+  } else {
+    ctx.bezierCurveTo(x - 66 * s, base - 220 * s, x - 30 * s, base - 290 * s, x, base - 300 * s);
+    ctx.bezierCurveTo(x + 30 * s, base - 290 * s, x + 66 * s, base - 220 * s, x + 62 * s, base - 110 * s);
+  }
+  ctx.closePath(); ctx.fill();
+  if (!ruined) {
+    ctx.beginPath(); ctx.ellipse(x, base - 304 * s, 22 * s, 7 * s, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(x - 3 * s, base - 336 * s, 6 * s, 32 * s);
+    ctx.beginPath(); ctx.moveTo(x + 3 * s, base - 336 * s); ctx.lineTo(x + 26 * s, base - 328 * s); ctx.lineTo(x + 3 * s, base - 320 * s); ctx.fill();
+  }
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(x + side * 80 * s, base - 40 * s);
+    ctx.quadraticCurveTo(x + side * 82 * s, base - 140 * s, x + side * 95 * s, base - 150 * s);
+    ctx.quadraticCurveTo(x + side * 108 * s, base - 140 * s, x + side * 110 * s, base - 40 * s);
+    ctx.fill();
+  }
+}
+function drawDiya(x, y, t) {                          // small oil lamp with flickering flame
+  const fl = 0.8 + 0.2 * Math.sin(t * 11 + x) * Math.sin(t * 6.3 + x * 0.3);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(x, y - 6, 1, x, y - 6, 46);
+  g.addColorStop(0, `rgba(255,190,90,${0.5 * fl})`); g.addColorStop(1, 'rgba(255,120,40,0)');
+  ctx.fillStyle = g; ctx.fillRect(x - 46, y - 52, 92, 92);
+  ctx.fillStyle = `rgba(255,220,130,${0.9 * fl})`;
+  ctx.beginPath(); ctx.moveTo(x - 3, y - 2); ctx.quadraticCurveTo(x, y - 14 * fl, x + 3, y - 2); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = '#120508';
+  ctx.beginPath(); ctx.ellipse(x, y, 7, 3.5, 0, 0, Math.PI); ctx.fill();
+}
+function drawGate(x, base, col) {
+  ctx.fillStyle = col;
+  ctx.fillRect(x - 70, base - 175, 14, 175); ctx.fillRect(x + 56, base - 175, 14, 175);
+  ctx.fillRect(x - 85, base - 182, 170, 12);
+  ctx.beginPath(); ctx.moveTo(x - 95, base - 180); ctx.lineTo(x, base - 212); ctx.lineTo(x + 95, base - 180); ctx.closePath(); ctx.fill();
+  for (let i = 0; i < 5; i++) {                      // palisade on both sides
+    ctx.fillRect(x - 200 + i * 24, base - 70 + (i % 2) * 8, 8, 70 - (i % 2) * 8);
+    ctx.fillRect(x + 96 + i * 24, base - 70 + (i % 2) * 8, 8, 70 - (i % 2) * 8);
+  }
+}
+function drawElephant(x, base, s, col) {             // war elephant with a howdah
+  ctx.save(); ctx.translate(x, base); ctx.scale(s, s);
+  ctx.fillStyle = ctx.strokeStyle = col;
+  for (const lx of [-58, -28, 30, 58]) ctx.fillRect(lx - 10, -75, 20, 75);
+  ctx.beginPath(); ctx.ellipse(0, -100, 88, 52, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-88, -118, 36, 38, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-68, -112, 24, 32, 0.2, 0, Math.PI * 2); ctx.fill();
+  ctx.lineCap = 'round'; ctx.lineWidth = 15;
+  ctx.beginPath(); ctx.moveTo(-112, -105); ctx.quadraticCurveTo(-136, -55, -116, -18); ctx.stroke();
+  ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(220,200,180,0.55)';    // tusk
+  ctx.beginPath(); ctx.moveTo(-106, -92); ctx.quadraticCurveTo(-128, -78, -132, -92); ctx.stroke();
+  ctx.fillRect(-38, -168, 76, 24);
+  ctx.beginPath(); ctx.moveTo(-44, -166); ctx.quadraticCurveTo(0, -214, 44, -166); ctx.fill();
+  ctx.lineWidth = 4; ctx.strokeStyle = col;
+  ctx.beginPath(); ctx.moveTo(86, -108); ctx.quadraticCurveTo(100, -80, 94, -55); ctx.stroke();
+  ctx.restore();
+}
+function drawTorch(x, y, t, i) {                      // army torch on the hill
+  ctx.strokeStyle = '#050102'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 3, y - 30); ctx.stroke();
+  const fl = 0.75 + 0.25 * Math.sin(t * 12 + i * 2.1);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(x + 3, y - 34, 1, x + 3, y - 34, 30);
+  g.addColorStop(0, `rgba(255,190,90,${0.9 * fl})`); g.addColorStop(1, 'rgba(255,90,30,0)');
+  ctx.fillStyle = g; ctx.fillRect(x - 27, y - 64, 60, 60);
+  ctx.restore();
+}
+function drawArrows(list) {                            // fire arrows on parabolic arcs
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+  const pos = (ar, u) => ({ x: ar.x0 + (ar.x1 - ar.x0) * u, y: ar.y0 + (ar.y1 - ar.y0) * u - ar.arc * 4 * u * (1 - u) });
+  for (const ar of list) {
+    const u = Math.min(1, ar.t / ar.dur);
+    if (u >= 1) continue;
+    const p = pos(ar, u), q = pos(ar, Math.max(0, u - 0.07));
+    const g = ctx.createLinearGradient(q.x, q.y, p.x, p.y);
+    g.addColorStop(0, 'rgba(255,90,30,0)'); g.addColorStop(1, 'rgba(255,200,110,0.9)');
+    ctx.strokeStyle = g; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,220,140,0.95)';
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawBeam(b, t) {                              // burning wooden beam
+  if (b.state === 'gone') return;
+  ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot);
+  ctx.fillStyle = '#0a0204'; ctx.fillRect(-85, -9, 170, 18);
+  ctx.restore();
+  drawFire(b.x, b.y - 4, 90, 40, t, 3.3);
+}
+
 // draw a Fighter silhouette; opts.at = [screenX, screenY, scale], opts.glow = color
 function drawActor(f, opts = {}) {
   ctx.save();
@@ -2668,7 +3092,7 @@ function drawActor(f, opts = {}) {
   ctx.restore();
 }
 function newActor(x, facing, prof, pose, extra = {}) {
-  const f = new Fighter(x, facing, '', prof === PLAYER_PROFILE || prof === KAITO_WIND, prof);
+  const f = new Fighter(x, facing, '', prof === PLAYER_PROFILE || prof === VEER_WIND, prof);
   f.forcePose = pose; f.pose = POSES[pose].slice(); f.computeSkeleton();
   return Object.assign(f, extra);
 }
@@ -2703,7 +3127,7 @@ function drawTyped(full, chars, cx, y, maxW, lh, font, color, align = 'center') 
 }
 // Speech box used on VS screens and for defeat lines
 function drawSpeech(name, line, cx, y, w, who, chars, tailX) {
-  const h = 104, x = cx - w / 2, col = who === 'kaito' ? '#f4e6c8' : '#ff6a4a';
+  const h = 104, x = cx - w / 2, col = who === 'veer' ? '#f4e6c8' : '#ff6a4a';
   ctx.save();
   ctx.fillStyle = 'rgba(6,2,6,0.85)';
   ctx.fillRect(x, y, w, h);
@@ -2718,108 +3142,270 @@ function drawSpeech(name, line, cx, y, w, who, chars, tailX) {
   return done;
 }
 
-/* ---- INTRO PANELS ---- */
+/* ---- INTRO PANELS — "VEER: THE LAST PROMISE" ----
+   Scripted with steps: {wait}, {do}, {until}, {say:[who,text]}, {narrate}.
+   Actors with .goal walk/run there. img: index of assets/introN.jpg (optional);
+   when an image is present the procedural scenery() is skipped. */
+const HUT_COL = '#1c0812';
 const INTRO = [
-  { // 1. PEACE
-    bg: 0, dur: 6.5, motes: true, cam: [0, -40, 1.0, 1.07, 640, 520],
-    text: 'Once, Kaito had everything worth protecting.',
+  { // 1. PEACE — golden dusk, village near a temple, oil lamps
+    bg: 4, img: 0, fireflies: true, motes: true, cam: [0, -30, 1.0, 1.08, 640, 520], tail: 1.2,
     setup: () => ({
-      k: newActor(470, 1, PLAYER_PROFILE, 'swordHigh', { weapon: 'sword', forceRate: 0.18 }),
-      y: newActor(720, -1, YUNA_PROFILE, 'sit'),
+      v: newActor(430, 1, PLAYER_PROFILE, 'kalariGuard', { forceRate: 0.14, thread: false, practice: true }),
+      m: newActor(1180, -1, MEERA_PROFILE, 'idleA'),
     }),
+    scenery() {
+      drawShikhara(985, GROUND, 1.0, '#2a1018');
+      drawHut(1130, GROUND, 150, 80, HUT_COL);
+      drawHut(220, GROUND, 130, 70, HUT_COL);
+    },
+    draw(a, t) {
+      drawDiya(1072, GROUND - 4, t); drawDiya(1192, GROUND - 4, t + 1);
+      drawDiya(903, GROUND - 42, t + 2); drawDiya(1067, GROUND - 42, t + 3); drawDiya(285, GROUND - 4, t + 4);
+      drawActor(a.m); drawActor(a.v);
+    },
     update(a, t) {
-      a.k.forcePose = Math.floor(t / 0.75) % 2 ? 'swordStrike' : 'swordHigh';
-      a.y.forcePose = (t % 1.6 < 0.9 && Math.floor(t * 6) % 2) ? 'sitLaugh' : 'sit';
-      a.y.forceRate = 0.3;
+      if (a.v.practice) a.v.forcePose = ['kalariGuard', 'kalariLow', 'kalariKick'][Math.floor(t / 0.9) % 3];
+      if (a.m.laughing && a.m.goal == null) { a.m.forcePose = Math.floor(t * 6) % 2 ? 'laugh' : 'standTall'; a.m.forceRate = 0.3; }
     },
-    draw(a) {
-      drawHouse(920, GROUND, 240, 120, '#1c0812', false);
-      ctx.fillStyle = '#1c0812';                       // little fence
-      for (let i = 0; i < 6; i++) ctx.fillRect(1060 + i * 26, GROUND - 40, 6, 40);
-      ctx.fillRect(1055, GROUND - 32, 150, 5);
-      drawActor(a.y); drawActor(a.k);
-    },
+    steps: [
+      { wait: 2.2 },
+      { do: a => { a.m.goal = a.v.x + 72; a.m.spd = 240; a.m.afterPose = 'laugh'; a.m.laughing = true; } },
+      { until: a => a.m.goal == null },
+      { do: a => { a.v.practice = false; a.v.forcePose = 'standTall'; } },
+      { wait: 0.9 },
+      { do: a => { a.m.laughing = false; a.m.forcePose = 'tieThread'; a.m.forceRate = 0.12; a.v.forcePose = 'offerArm'; a.v.forceRate = 0.1; } },
+      { wait: 1.5 },
+      { do: a => { a.v.thread = true; Sound.ding(); } },
+      { say: ['MEERA', 'Bhaiya, this thread will protect you.'], cps: 26 },
+      { say: ['VEER', "No, Meera. I'm the one who protects you. Always."], cps: 26 },
+      { do: a => { a.m.laughing = true; a.v.forcePose = 'standTall'; } },
+      { wait: 1.0 },
+      { do: a => { a.m.laughing = false; a.m.goal = 1150; a.m.spd = 210; a.m.afterPose = 'idleA'; } },
+      { wait: 2.2 },
+    ],
   },
-  { // 2. THE ATTACK
-    bg: 2, dur: 6.5, fire: true, cam: [30, -20, 1.08, 1.0, 640, 500],
-    fires: [[200, GROUND, 170, 120], [520, GROUND, 150, 100], [820, GROUND, 180, 130]],
-    text: 'Then the Shogun came.',
+  { // 2. THE ATTACK — night, blood-red moon, drums, torches, war elephant, fire arrows
+    bg: 5, img: 1, cam: [0, 0, 1.0, 1.06, 700, 480], tail: 0.8,
     setup: () => ({
-      s: newActor(1100, -1, OPPONENTS[2], 'idleA'),
-      sol: [0, 1, 2].map(i => newActor(260 + i * 150, 1, SOLDIER_PROFILE, 'walkA', { weapon: 'spear', forceRate: 0.15 })),
+      v: newActor(300, 1, PLAYER_PROFILE, 'swordRest', { weapon: 'sword' }),
+      r: newActor(1090, -1, OPPONENTS[2], 'sit'),
+      huts: [[130, 120, 70], [470, 140, 80], [690, 130, 75]].map(([x, w, h]) => ({ x, w, h, lit: false })),
+      arrows: [], torches: 0, rakA: 0, dT: 0, aT: 0,
     }),
+    scenery() {
+      ctx.fillStyle = '#0a0205';                       // hill
+      ctx.beginPath(); ctx.ellipse(1060, GROUND + 30, 330, 190, 0, Math.PI, 0); ctx.fill();
+    },
+    draw(a, t) {
+      const hillY = x => GROUND + 30 - 190 * Math.sqrt(Math.max(0, 1 - ((x - 1060) / 330) ** 2));
+      a.huts.forEach((h, i) => {
+        drawHut(h.x, GROUND, h.w, h.h, '#0d0306');
+        if (h.lit) drawFire(h.x, GROUND - h.h * 0.35, h.w * 0.95, h.h * 1.4, t, i * 1.7);
+      });
+      drawGate(300, GROUND, '#090205');
+      for (let i = 0; i < Math.floor(a.torches); i++) {          // army torches along the hill
+        const x = i % 2 ? 1180 + (i >> 1) * 28 : 950 - (i >> 1) * 30;
+        drawTorch(x, hillY(x), t, i);
+      }
+      if (a.rakA > 0) {                                         // Raktasur on his war elephant
+        ctx.save(); ctx.globalAlpha = a.rakA;
+        drawElephant(1080, hillY(1080) + 2, 0.72, '#040102');
+        drawActor(a.r, { at: [1078, hillY(1080) - 116, 0.55], noShadow: true });
+        ctx.restore();
+      }
+      drawArrows(a.arrows);
+      drawActor(a.v);
+    },
     update(a, t, dt) {
-      a.sol.forEach((f, i) => { f.x += 38 * dt; f.forcePose = Math.floor(t * 2.6 + i) % 2 ? 'walkA' : 'walkB'; });
+      if (a.drums && (a.dT -= dt) <= 0) { a.dT = 0.85; Sound.drum(); }
+      if (a.torchOn) a.torches = Math.min(10, a.torches + dt * 5);
+      if (a.rakIn) a.rakA = Math.min(1, a.rakA + dt * 0.6);
+      if (a.firing && (a.aT -= dt) <= 0) {
+        a.aT = 0.2 + Math.random() * 0.25;
+        const h = a.huts[Math.random() * a.huts.length | 0];
+        a.arrows.push({ x0: 900 + Math.random() * 280, y0: 440, x1: h.x + (Math.random() - 0.5) * h.w * 0.6, y1: GROUND - h.h, t: 0, dur: 1.1 + Math.random() * 0.4, arc: 170 + Math.random() * 90, hut: h });
+        if (Math.random() < 0.35) Sound.whoosh(0.5);
+      }
+      for (const ar of a.arrows) { ar.t += dt; if (ar.t >= ar.dur && !ar.done) { ar.done = true; ar.hut.lit = true; } }
+      a.arrows = a.arrows.filter(ar => ar.t < ar.dur + 0.1);
+      const lit = a.huts.filter(h => h.lit);
+      cs.dynFires = lit.map(h => [h.x, GROUND, h.w]);
+      Sound.setFire(lit.length > 0);
     },
-    draw(a, t) {
-      drawBurning(this.fires, t, false);
-      ctx.fillStyle = '#060102';                       // hill
-      ctx.beginPath(); ctx.ellipse(1100, GROUND + 10, 230, 120, 0, Math.PI, 0); ctx.fill();
-      drawActor(a.s, { at: [1100, GROUND - 108, 0.95], noShadow: true });
-      a.sol.forEach(f => drawActor(f));
-    },
+    steps: [
+      { wait: 1.2 },
+      { do: a => { a.drums = true; } },
+      { wait: 1.8 },
+      { do: a => { a.torchOn = true; } },
+      { wait: 1.6 },
+      { do: a => { a.rakIn = true; } },
+      { wait: 1.8 },
+      { do: a => { a.firing = true; a.v.forcePose = 'kalariGuard'; a.v.forceRate = 0.1; } },
+      { wait: 1.4 },
+      { narrate: 'That night, Raktasur came.', cps: 16, hold: 2.4 },
+      { wait: 0.4 },
+    ],
   },
-  { // 3. THE RETURN
-    bg: 2, dur: 6, fire: true, cam: [60, -60, 1.05, 1.05, 640, 520],
-    fires: [[180, GROUND, 160, 110], [640, GROUND, 200, 130], [1100, GROUND, 170, 120]],
-    text: 'He returned too late.',
-    setup: () => ({ k: newActor(110, 1, PLAYER_PROFILE, 'runA', { forceRate: 0.32 }) }),
-    update(a, t) {
-      a.k.x = Math.min(1150, 110 + t * 170);
-      a.k.forcePose = Math.floor(t * 4.5) % 2 ? 'runA' : 'runB';
-    },
-    draw(a, t) {
-      drawBurning(this.fires, t, true, '#0b0205');
-      drawActor(a.k);
-      ctx.fillStyle = '#030001';                       // foreground debris
-      ctx.save(); ctx.translate(380, GROUND + 40); ctx.rotate(-0.12); ctx.fillRect(-160, -10, 320, 20); ctx.restore();
-      ctx.save(); ctx.translate(960, GROUND + 50); ctx.rotate(0.18); ctx.fillRect(-140, -9, 280, 18); ctx.restore();
-    },
-  },
-  { // 4. THE PROMISE
-    bg: 2, dur: 9, cps: 15, fire: true, falling: true, tint: 'rgba(40,0,0,0.35)', cam: [0, 0, 1.0, 1.18, 610, 545],
-    fires: [[1080, GROUND, 150, 90], [150, GROUND, 140, 80]],
-    text: 'Yuna: "Promise me... you\'ll protect others. So nobody has to feel as scared as I did."',
+  { // 3. THE RETURN — run through burning huts, knock aside a beam, find the collapsed hut
+    bg: 5, img: 2, fire: true, follow: 'v', cam: [0, 0, 1.3, 1.3, 640, 520], tail: 0.6,
+    fires: [[260, GROUND, 130], [700, GROUND, 140]],
     setup: () => {
-      const y = newActor(775, 1, YUNA_PROFILE, 'ko');
-      Object.assign(y, { ko: true, landedKO: true, fall: 0.74, fixedFall: 0.74 });   // propped up in his arms
-      y.computeSkeleton();
-      return { k: newActor(560, 1, PLAYER_PROFILE, 'kneel'), y };
+      const m = newActor(1120, 1, MEERA_PROFILE, 'ko');
+      Object.assign(m, { ko: true, landedKO: true, fall: 1, fixedFall: 0.98 });
+      m.computeSkeleton();
+      return { v: newActor(90, 1, PLAYER_PROFILE, 'runA'), m, beam: { x: 590, y: 150, rot: 0.25, vx: 0, vy: 0, vr: 0, state: 'idle' } };
+    },
+    scenery() {},
+    draw(a, t) {
+      drawHut(260, GROUND, 130, 75, '#0d0306'); drawFire(260, GROUND - 26, 124, 105, t, 1);
+      drawHut(700, GROUND, 140, 80, '#0d0306'); drawFire(700, GROUND - 28, 133, 112, t, 2);
+      drawCollapsedHut(1080, GROUND, 230, '#0b0205');
+      drawActor(a.m, { noShadow: true, glow: 'rgba(255,150,80,0.6)' });
+      ctx.fillStyle = '#050102';                       // beams pinning her down
+      ctx.save(); ctx.translate(1090, GROUND - 16); ctx.rotate(-0.25); ctx.fillRect(-70, -8, 150, 16); ctx.restore();
+      ctx.save(); ctx.translate(1140, GROUND - 26); ctx.rotate(0.4); ctx.fillRect(-60, -7, 130, 14); ctx.restore();
+      if (a.beam.state !== 'idle') drawBeam(a.beam, t);
+      drawActor(a.v);
+    },
+    update(a, t, dt) {
+      const b = a.beam;
+      if (b.state === 'fall') {
+        b.vy += 900 * dt; b.y += b.vy * dt;
+        if (b.y >= GROUND - 70) { b.y = GROUND - 70; b.state = 'rest'; Sound.thud(); }
+      } else if (b.state === 'knock') {
+        b.vy += 900 * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.rot += b.vr * dt;
+        if (b.y > GROUND + 120) b.state = 'gone';
+      }
+    },
+    steps: [
+      { do: a => { a.v.goal = 500; a.v.spd = 270; a.v.afterPose = 'runA'; } },
+      { wait: 0.6 },
+      { do: a => { a.beam.state = 'fall'; } },
+      { until: a => a.v.goal == null },
+      { do: a => { a.v.forcePose = 'push'; a.v.forceRate = 0.45; const b = a.beam; b.state = 'knock'; b.vx = 480; b.vy = -320; b.vr = 6; Sound.heavy(); } },
+      { wait: 0.45 },
+      { do: a => { a.v.goal = 760; a.v.spd = 270; } },
+      { say: ['VEER', 'MEERA!'], cps: 14, hold: 0.5, shout: true },
+      { until: a => a.v.goal == null },
+      { do: a => { a.v.goal = 960; a.v.spd = 250; a.v.afterPose = 'standTall'; } },
+      { say: ['VEER', 'MEERA!!'], cps: 14, hold: 0.3, shout: true },
+      { until: a => a.v.goal == null },
+      { wait: 0.9 },
+      { do: a => { a.v.forcePose = 'kneel'; a.v.forceRate = 0.1; } },
+      { wait: 1.6 },
+    ],
+  },
+  { // 4. THE PROMISE — slow, quiet, embers falling, single flute + drone
+    bg: 5, img: 3, fire: true, falling: true, tint: 'rgba(40,0,0,0.35)', cam: [0, 0, 1.12, 1.3, 640, 540], tail: 0.8,
+    fires: [[1120, GROUND, 140, 90], [140, GROUND, 130, 80]],
+    setup: () => {
+      const m = newActor(775, 1, MEERA_PROFILE, 'ko');
+      Object.assign(m, { ko: true, landedKO: true, fall: 0.98, fixedFall: 0.98 });
+      m.computeSkeleton();
+      return { v: newActor(600, 1, PLAYER_PROFILE, 'kneel'), m, lifting: 0 };
+    },
+    scenery(a, t) {
+      drawBurning(this.fires, t, true, '#0b0205');
+      drawHouse(640, GROUND, 440, 210, '#2a0a12', true);
     },
     draw(a, t) {
-      drawBurning(this.fires, t, true, '#0b0205');
-      drawHouse(640, GROUND, 440, 210, '#2a0a12', true);       // lighter = further back
-      ctx.save();                                              // warm firelight behind them
+      ctx.save();                                      // warm firelight behind them
       ctx.globalCompositeOperation = 'lighter';
       const fl = 0.9 + 0.1 * Math.sin(t * 7);
-      const g = ctx.createRadialGradient(630, 540, 20, 630, 540, 300);
+      const g = ctx.createRadialGradient(660, 540, 20, 660, 540, 300);
       g.addColorStop(0, `rgba(255,120,40,${0.45 * fl})`); g.addColorStop(1, 'rgba(255,60,20,0)');
-      ctx.fillStyle = g; ctx.fillRect(330, 240, 600, 420);
+      ctx.fillStyle = g; ctx.fillRect(360, 240, 600, 420);
       ctx.restore();
-      drawActor(a.y, { noShadow: true, glow: 'rgba(255,150,80,0.9)' });   // firelit rim
-      ctx.fillStyle = '#050102';                       // collapsed beams over her legs
-      ctx.save(); ctx.translate(790, GROUND - 14); ctx.rotate(-0.28); ctx.fillRect(-60, -8, 130, 16); ctx.restore();
-      ctx.save(); ctx.translate(830, GROUND - 22); ctx.rotate(0.42); ctx.fillRect(-55, -7, 120, 14); ctx.restore();
-      drawActor(a.k);
+      drawActor(a.m, { noShadow: true, glow: 'rgba(255,150,80,0.9)' });
+      const l = a.lifting;                             // beams lifted up and thrown aside
+      if (l < 1) {
+        ctx.save(); ctx.globalAlpha = 1 - l; ctx.fillStyle = '#050102';
+        ctx.save(); ctx.translate(790 + 120 * l, GROUND - 14 - 90 * l); ctx.rotate(-0.28 + l); ctx.fillRect(-60, -8, 130, 16); ctx.restore();
+        ctx.save(); ctx.translate(830 + 160 * l, GROUND - 24 - 70 * l); ctx.rotate(0.42 + l * 1.4); ctx.fillRect(-55, -7, 120, 14); ctx.restore();
+        ctx.restore();
+      }
+      drawActor(a.v);
+      if (a.threadGlow) {                              // the red thread catches the firelight
+        const k = a.v.sk, px = k.eF.x + (k.hF.x - k.eF.x) * 0.8, py = k.eF.y + (k.hF.y - k.eF.y) * 0.8;
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        const gg = ctx.createRadialGradient(px, py, 1, px, py, 26);
+        gg.addColorStop(0, `rgba(255,60,60,${0.5 + 0.2 * Math.sin(t * 3)})`); gg.addColorStop(1, 'rgba(255,0,0,0)');
+        ctx.fillStyle = gg; ctx.fillRect(px - 26, py - 26, 52, 52);
+        ctx.restore();
+      }
     },
+    update(a, t, dt) {
+      if (a.lift) a.lifting = Math.min(1, a.lifting + dt * 0.8);
+      if (a.hold) a.m.fixedFall += (0.74 - a.m.fixedFall) * Math.min(1, dt * 2);
+    },
+    steps: [
+      { do: () => Sound.setMusicLevel(0.6, 1) },
+      { wait: 1.0 },
+      { do: a => { a.v.forcePose = 'lift'; a.v.forceRate = 0.08; a.lift = true; Sound.thud(); } },
+      { wait: 1.6 },
+      { do: a => { a.v.forcePose = 'kneel'; a.v.forceRate = 0.06; a.hold = true; a.m.forcePose = 'reachUp'; a.m.forceRate = 0.03; } },
+      { wait: 1.2 },
+      { say: ['VEER', "Meera... stay with me. I'm here now."], cps: 15, hold: 1.6 },
+      { say: ['MEERA', 'Bhaiya... you came.'], cps: 11, hold: 1.8 },
+      { say: ['VEER', "I'm sorry... I should have been here."], cps: 14, hold: 1.6 },
+      { say: ['MEERA', "The thread... it didn't protect you from being sad, did it?"], cps: 12, hold: 1.8 },
+      { say: ['MEERA', "Promise me... you'll protect others. So nobody has to feel as scared as I did."], cps: 11, hold: 2.0 },
+      { say: ['VEER', 'I promise.'], cps: 7, hold: 2.0 },
+      { do: a => { a.m.forcePose = 'ko'; a.m.forceRate = 0.025; Sound.setMusicLevel(0, 0.6); } },   // her hand falls; music stops
+      { wait: 2.6 },                                                                                   // only the fire crackles
+      { do: a => { a.v.forcePose = 'lookWrist'; a.v.forceRate = 0.04; a.threadGlow = true; } },
+      { wait: 3.0 },
+    ],
   },
-  { // 5. THE BEGINNING
-    bg: 3, dur: 7, motes: true, cam: [0, 0, 1.12, 1.0, 640, 560],
-    smokes: [[880, GROUND, 120], [1110, GROUND, 120], [260, GROUND, 100]],
-    text: 'A promise was made. A journey began.',
-    setup: () => ({ k: newActor(560, 1, KAITO_WIND, 'swordRest', { weapon: 'sword' }) }),
-    draw(a) {
-      drawHouse(880, GROUND, 230, 130, '#140c18', true);
-      drawHouse(1110, GROUND, 200, 110, '#140c18', true);
-      drawHouse(260, GROUND, 190, 100, '#140c18', true);
-      drawActor(a.k);
+  { // 5. THE BEGINNING — grey dawn, ruined village, temple behind
+    bg: 3, img: 4, ash: true, cam: [0, -20, 1.12, 1.0, 640, 560], tail: 0.4,
+    smokes: [[880, GROUND, 120], [1130, GROUND, 120], [240, GROUND, 100]],
+    setup: () => ({ v: newActor(560, 1, PLAYER_PROFILE, 'standTall'), scarf: false, titleT: -1 }),
+    scenery() {
+      drawShikhara(1000, GROUND, 1.15, '#2c2434', true);
+      drawCollapsedHut(880, GROUND, 220, '#140c18');
+      drawCollapsedHut(1140, GROUND, 190, '#140c18');
+      drawCollapsedHut(240, GROUND, 190, '#140c18');
     },
+    draw(a, t) {
+      if (!a.scarf) {                                  // his red scarf lying in the ashes
+        ctx.strokeStyle = '#a3121a'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(618, GROUND - 3); ctx.quadraticCurveTo(645, GROUND - 9, 672, GROUND - 2); ctx.stroke();
+      }
+      drawActor(a.v);
+    },
+    overlay(t) {
+      const a = cs.actors;
+      if (a.titleT < 0) return;
+      const al = Math.min(1, a.titleT / 1.6);
+      const g = ctx.createLinearGradient(0, 230, 0, 310);
+      g.addColorStop(0, '#fff2b0'); g.addColorStop(1, '#e0a020');
+      ctx.fillStyle = `rgba(0,0,0,${0.45 * al})`; ctx.fillRect(0, 0, W, H);
+      bigText('VEER', W / 2, 220, 70, '#e3202a', 1, al);
+      bigText('THE LAST PROMISE', W / 2, 300, 92, g, 1 + (1 - al) * 0.06, al);
+    },
+    update(a, t, dt) { if (a.titleT >= 0) a.titleT += dt; },
+    steps: [
+      { do: () => Sound.setMusicLevel(1, 2) },
+      { wait: 1.2 },
+      { do: a => { a.v.forcePose = 'tieWrist'; a.v.forceRate = 0.07; } },      // ties the thread tighter
+      { wait: 1.8 },
+      { do: a => { a.v.goal = 640; a.v.spd = 80; a.v.walk = true; a.v.afterPose = 'kneel'; } },
+      { until: a => a.v.goal == null },
+      { wait: 0.7 },
+      { do: a => { a.scarf = true; a.v.setTail(SCARF_TAIL); a.v.forcePose = 'standTall'; a.v.forceRate = 0.05; } },
+      { wait: 1.6 },
+      { narrate: 'A promise was made. A journey began.', cps: 22, hold: 1.4 },
+      { do: a => { a.titleT = 0; } },
+      { wait: 4.0 },
+    ],
   },
 ];
 
 /* ---- ENDING PANELS ---- */
 const ENDING = [
-  { // 1. Shogun falls to his knees
+  { // 1. Raktasur falls to his knees
     bg: 2, dur: 5, tint: 'rgba(30,0,0,0.3)', cam: [0, 0, 1.05, 1.15, 680, 520],
     setup: () => ({
       s: newActor(820, -1, OPPONENTS[2], 'idleA', { forcePose: 'kneelDefeat', forceRate: 0.035 }),
@@ -2832,9 +3418,9 @@ const ENDING = [
     fires: [[260, GROUND, 170, 120], [640, GROUND, 190, 130], [1020, GROUND, 170, 120]],
     draw(a, t) { drawBurning(this.fires, t, false); },
   },
-  { // 3. Warm glowing image of Yuna smiling
+  { // 3. Warm glowing image of Meera smiling
     bg: 0, dur: 6, motes: true, cam: [0, 0, 1.3, 1.45, 640, 520], tint: 'rgba(255,190,100,0.12)',
-    setup: () => ({ y: newActor(640, 1, YUNA_PROFILE, 'idleA', { forcePose: 'wave', forceRate: 0.04 }) }),
+    setup: () => ({ y: newActor(640, 1, MEERA_PROFILE, 'idleA', { forcePose: 'wave', forceRate: 0.04 }) }),
     draw(a) {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
@@ -2845,9 +3431,9 @@ const ENDING = [
       drawActor(a.y, { glow: '#ffd27a' });
     },
   },
-  { // 4. Kaito lays down his sword and looks to the rising sun
+  { // 4. Veer lays down his sword and looks to the rising sun
     bg: 3, dur: 7, motes: true, cam: [0, 0, 1.1, 1.0, 640, 560],
-    setup: () => ({ k: newActor(520, 1, KAITO_WIND, 'kneel', { weapon: 'sword' }), placed: false }),
+    setup: () => ({ k: newActor(520, 1, VEER_WIND, 'kneel', { weapon: 'sword' }), placed: false }),
     update(a, t) {
       if (t > 2.2 && a.k.weapon) { a.k.weapon = null; a.placed = true; }
       if (t > 3) { a.k.forcePose = 'lookUp'; a.k.forceRate = 0.04; }
@@ -2865,7 +3451,7 @@ const ENDING = [
   { // 5. The lesson
     bg: 3, dur: 9, cps: 30, dim: 0.3, motes: true, cam: [0, 0, 1.0, 1.04, 640, 560],
     text: 'You cannot change the past. You cannot save everyone. But you can decide what your strength stands for.',
-    setup: () => ({ k: newActor(640, 1, KAITO_WIND, 'lookUp') }),
+    setup: () => ({ k: newActor(640, 1, VEER_WIND, 'lookUp') }),
     draw(a) { drawActor(a.k); },
   },
   { // 6. Title card
@@ -2891,18 +3477,22 @@ function renderCutscene() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   // camera drift (eased over the panel)
   const c = p.cam || [0, 0, 1, 1, W / 2, H / 2];
-  const k = Math.min(1, t / cs.dur), e = k * k * (3 - 2 * k);
-  const dx = c[0] + (c[1] - c[0]) * e, z = c[2] + (c[3] - c[2]) * e, fx = c[4], fy = c[5];
+  const k = Math.min(1, t / (p.steps ? (p.camDur || 12) : cs.dur)), e = k * k * (3 - 2 * k);
+  let dx = c[0] + (c[1] - c[0]) * e, fx = c[4];
+  const z = c[2] + (c[3] - c[2]) * e, fy = c[5];
+  if (p.follow && cs.camX != null) { fx = W / 2; dx = W / 2 - cs.camX; }   // camera follows an actor
   if (p.filter) ctx.filter = p.filter;
-  // background layer: slower parallax
+  // background layer: slower parallax (intro image if present, else canvas scene)
+  const im = introImg(p.img);
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   const bz = 1.04 + (z - 1) * 0.4;
   ctx.translate(fx, fy); ctx.scale(bz, bz); ctx.translate(-fx + dx * 0.3, -fy);
-  ctx.drawImage(bgCanvases[p.bg], 0, 0, W, H);
+  ctx.drawImage(im ? im.cv : bgCanvases[p.bg], 0, 0, W, H);
   // world layer
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   if (p.tint) { ctx.fillStyle = p.tint; ctx.fillRect(0, 0, W, H); }
   ctx.translate(fx, fy); ctx.scale(z, z); ctx.translate(-fx + dx, -fy);
+  if (p.scenery && !im) p.scenery.call(p, cs.actors, t);   // procedural scenery only without an image
   if (p.draw) p.draw.call(p, cs.actors, t);
   drawCsFx();
   ctx.filter = 'none';
@@ -2919,12 +3509,29 @@ function renderCutscene() {
   ctx.fillRect(0, 0, W, 62 * bar);
   ctx.fillRect(0, H - 118 * bar, W, 118 * bar);
   if (p.text) drawTyped(p.text, (t - 0.5) * (p.cps || 28), W / 2, H - 60, 1180, 34, 'italic 29px Georgia, serif', '#f2e6d8');
+  const L = cs.line;
+  if (L) {
+    const chars = L.t * L.cps;
+    if (!L.who) drawTyped(L.text, chars, W / 2, H - 60, 1180, 34, 'italic 29px Georgia, serif', '#f2e6d8');   // narration
+    else {                                             // dialogue box with the speaker's name
+      const col = L.who === 'VEER' ? '#f4e6c8' : '#ffb0c0';
+      ctx.save();
+      ctx.fillStyle = 'rgba(10,4,8,0.9)'; ctx.fillRect(150, H - 112, W - 300, 100);
+      ctx.strokeStyle = col; ctx.globalAlpha = 0.7; ctx.lineWidth = 1.5; ctx.strokeRect(150, H - 112, W - 300, 100);
+      ctx.restore();
+      text(L.who, 176, H - 92, 22, col, 'left', BRUSH);
+      const done = L.shout
+        ? drawTyped(L.text, chars, W / 2, H - 52, 900, 44, '46px ' + BRUSH, '#ffe0d0')
+        : drawTyped(L.text, chars, W / 2, H - 52, 920, 30, 'italic 26px Georgia, serif', '#f4ece0');
+      if (done) text('▶', W - 172, H - 28, 15, `rgba(255,240,220,${0.5 + 0.5 * Math.sin(performance.now() / 180)})`, 'right');
+    }
+  }
   // fades between panels
   const fadeIn = Math.min(1, t / 0.7);
   const fadeOut = cs.out !== null ? Math.max(0, cs.out / cs.outMax) : 1;
   const alpha = fadeIn * fadeOut;
   if (alpha < 1) { ctx.fillStyle = `rgba(0,0,0,${1 - alpha})`; ctx.fillRect(0, 0, W, H); }
-  text('ENTER / ESC  skip    ·    SPACE / CLICK  next', W - 20, 32, 14, 'rgba(255,255,255,0.45)', 'right');
+  text('ESC  skip    ·    ENTER / SPACE / CLICK  advance', W - 20, 32, 14, 'rgba(255,255,255,0.45)', 'right');
 }
 
 function render() {
@@ -2949,6 +3556,7 @@ function frame(now) {
   if (scene === 'battle') {
     if (!paused) {
       story.time += dt;
+      updateEnv(dt * game.timeScale, currentOpp());
       realUpdate(dt);
       acc += dt * game.timeScale;
       while (acc >= STEP && n++ < 5) { step(); acc -= STEP; }
@@ -2958,7 +3566,7 @@ function frame(now) {
     acc += dt;
     while (acc >= STEP && n++ < 5) { sceneStep(); acc -= STEP; }
     if (scene === 'cutscene') updateCutscene(dt);
-    if (scene === 'vs' && sceneT > 0.8) vsDlg.t += dt;
+    if (scene === 'vs') { updateEnv(dt, currentOpp()); if (sceneT > 0.8) vsDlg.t += dt; }
   }
   if (n >= 5) acc = 0;
   render();
