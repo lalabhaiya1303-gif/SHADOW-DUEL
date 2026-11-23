@@ -70,30 +70,60 @@ const OPPONENTS = [
   {
     name: 'RONIN', tag: 'EASY', learn: 0, look: 'hat', bg: 0, hp: 100, dmgMult: 0.9, speed: 0.8, atkSpeed: 0.85,
     size: 1, thick: 1, perfectChance: 0.05, energyMult: 0.8, eye: '#ff9a3c',
-    taunt: 'My blade has rusted, but your end will not take long.',
+    role: 'Former warrior of the Shogun',
+    lines: [
+      { who: 'opp', text: 'Still chasing ghosts, little warrior?' },
+      { who: 'opp', text: 'Your village died because it was weak.' },
+      { who: 'kaito', text: "Then I'll show you what its people were made of." },
+    ],
+    defeat: 'I... thought strength was everything.',
     ai: { block: 0.12, react: [8, 14], combo: 0.08, kick: 0.35, cd: [70, 120], special: 0.02, specialRange: 260, jump: 0.002 },
   },
   {
     name: 'VIPER', tag: 'MEDIUM', learn: 0.3, look: 'ponytail', bg: 1, hp: 100, dmgMult: 1, speed: 1.25, atkSpeed: 1.15,
     size: 1, thick: 0.82, perfectChance: 0.15, energyMult: 1, eye: '#c6ff6a',
     tail: { color: '#060304', n: 11, seg: 10, w0: 8, w1: 2.5, ax: -11, ay: -11, grav: 0.5, wind: 0.12 },
-    taunt: 'You blink, you bleed. I strike twice before you breathe.',
+    role: "The Shogun's assassin",
+    lines: [
+      { who: 'opp', text: 'You should have stayed buried with your village.' },
+      { who: 'opp', text: "I don't remember the faces of those I kill." },
+      { who: 'kaito', text: 'But I remember every life you took.' },
+    ],
+    defeat: 'The Shogun... will not fall so easily.',
     ai: { block: 0.25, react: [5, 11], combo: 0.4, kick: 0.6, cd: [36, 70], special: 0.06, specialRange: 300, jump: 0.006 },
   },
   {
     name: 'SHOGUN', tag: 'FINAL BOSS', learn: 1, look: 'helmet', bg: 2, hp: 150, dmgMult: 1.3, speed: 1, atkSpeed: 1,
     size: 1.15, thick: 1.3, perfectChance: 0.45, energyMult: 1.4, eye: '#ff2a2a',
-    taunt: 'Kneel, shadow. The red moon has already chosen your grave.',
+    role: 'The warlord who burned your village',
+    lines: [
+      { who: 'opp', text: 'Look at you. Still fighting for the dead.' },
+      { who: 'opp', text: 'You think defeating me will bring them back?' },
+      { who: 'kaito', text: "No. But I'll make sure you never take another life." },
+    ],
+    defeat: 'You... have become stronger than I imagined.',
     ai: { block: 0.55, react: [2, 7], combo: 0.35, kick: 0.4, cd: [25, 55], special: 0.25, specialRange: 380, jump: 0.002 },
   },
 ];
+
+// Story-only characters (cutscenes)
+const YUNA_PROFILE = {
+  look: 'ponytail', hp: 1, dmgMult: 1, speed: 1, atkSpeed: 1, size: 0.68, thick: 0.75,
+  perfectChance: 0, energyMult: 1, eye: null,
+  tail: { color: '#060304', n: 8, seg: 7, w0: 6, w1: 2, ax: -11, ay: -11, grav: 0.45, wind: 0.15 },
+};
+const SOLDIER_PROFILE = {
+  look: 'hat', hp: 1, dmgMult: 1, speed: 1, atkSpeed: 1, size: 0.95, thick: 1,
+  perfectChance: 0, energyMult: 1, eye: null,
+};
+const KAITO_WIND = Object.assign({}, PLAYER_PROFILE, { tail: Object.assign({}, PLAYER_PROFILE.tail, { wind: 0.85, n: 10 }) });
 
 /* =========================================================================
    3. SAVE DATA (localStorage)
    ========================================================================= */
 const SAVE_KEY = 'shadowDuel.save';
 function loadSave() {
-  const def = { best: -1, muted: false, vision: false, profile: null };
+  const def = { best: -1, muted: false, vision: false, profile: null, storySeen: false };
   try { return Object.assign(def, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); }
   catch (e) { return def; }
 }
@@ -103,7 +133,10 @@ const save = loadSave();   // best: highest opponent index reached (3 = beat the
 /* =========================================================================
    4. SOUND  (Web Audio only, everything synthesized)
    ========================================================================= */
-const NOTE = { E4: 329.63, G4: 392, A4: 440, C5: 523.25, D5: 587.33, E5: 659.25, G5: 783.99, A5: 880 };
+const STORY_MELODY = [                    // slow, sad flute for cutscenes
+  [0, 'A4', 6], [6, 'G4', 2], [8, 'E4', 6], [14, 'D4', 2], [16, 'C5', 5], [21, 'A4', 3], [24, 'G4', 4], [28, 'E4', 4],
+];
+const NOTE = { C4: 261.63, D4: 293.66, E4: 329.63, G4: 392, A4: 440, C5: 523.25, D5: 587.33, E5: 659.25, G5: 783.99, A5: 880 };
 const MUSIC_STEP = 60 / 84 / 2;          // eighth notes at 84 BPM
 const DON = [0, 6, 8, 12, 14];           // big taiko hits (16-step bar)
 const KA = [4, 10, 15];                  // rim clicks
@@ -135,6 +168,47 @@ const Sound = {
     this.noiseBuf = buf;
     this.nextTime = c.currentTime + 0.1; this.stepI = 0;
     setInterval(() => this.schedule(), 25);
+    this.mood = 'battle';
+    if (this.moodWanted && this.moodWanted !== 'battle') this.setMood(this.moodWanted);
+    if (this.fireWanted) this.setFire(true);
+  },
+  // 'battle' = taiko + flute; 'story' = slow sad flute + soft drone
+  setMood(m) {
+    this.moodWanted = m;
+    if (!this.ctx || this.mood === m) return;
+    this.mood = m;
+    const c = this.ctx, t = c.currentTime;
+    if (m === 'story' && !this.drone) {
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.05, t + 2);
+      g.connect(this.music);
+      const oscs = [110, 164.81, 220.5].map(f => { const o = c.createOscillator(); o.type = 'sine'; o.frequency.value = f; o.connect(g); o.start(t); return o; });
+      this.drone = { g, oscs };
+    } else if (m !== 'story' && this.drone) {
+      const d = this.drone;
+      d.g.gain.setTargetAtTime(0.0001, t, 0.4);
+      d.oscs.forEach(o => o.stop(t + 2.5));
+      this.drone = null;
+    }
+  },
+  // crackling fire bed (low rumble loop + random pops in schedule())
+  setFire(on) {
+    this.fireWanted = on;
+    if (!this.ctx) return;
+    const c = this.ctx, t = c.currentTime;
+    if (on && !this.fire) {
+      const src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+      src.buffer = this.noiseBuf; src.loop = true;
+      f.type = 'lowpass'; f.frequency.value = 450;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.07, t + 0.8);
+      src.connect(f); f.connect(g); g.connect(this.sfx); src.start(t);
+      this.fire = { src, g };
+    } else if (!on && this.fire) {
+      const fr = this.fire;
+      fr.g.gain.setTargetAtTime(0.0001, t, 0.2);
+      fr.src.stop(t + 1.2);
+      this.fire = null;
+    }
   },
   setMuted(m) {
     this.muted = m; save.muted = m; writeSave();
@@ -218,6 +292,9 @@ const Sound = {
     const c = this.ctx;
     if (!c || c.state !== 'running') return;
     if (this.nextTime < c.currentTime - 0.1) this.nextTime = c.currentTime + 0.05;
+    if (this.fire && !this.muted && Math.random() < 0.3)        // fire crackle pops
+      this.noise(c.currentTime + Math.random() * 0.03, 0.02 + Math.random() * 0.03,
+        { filter: 'bandpass', freq: 1500 + Math.random() * 3000, Q: 3, gain: 0.04 + Math.random() * 0.08, attack: 0.002 });
     while (this.nextTime < c.currentTime + 0.2) {
       if (!this.muted) this.musicStep(this.stepI, this.nextTime);
       this.nextTime += MUSIC_STEP;
@@ -225,6 +302,11 @@ const Sound = {
     }
   },
   musicStep(i, t) {
+    if (this.mood === 'story') {
+      const n = STORY_MELODY.find(m => m[0] === i);
+      if (n) this.flute(NOTE[n[1]], t, n[2] * MUSIC_STEP, 0.065);
+      return;
+    }
     const s = i % 16;
     if (DON.includes(s)) {
       const soft = s === 14;
@@ -235,15 +317,15 @@ const Sound = {
     const n = MELODY.find(m => m[0] === i);
     if (n) this.flute(NOTE[n[1]], t, n[2] * MUSIC_STEP);
   },
-  flute(f, t, dur) {
+  flute(f, t, dur, vol = 0.09) {
     const c = this.ctx, o = c.createOscillator(), g = c.createGain(), lfo = c.createOscillator(), lg = c.createGain();
     o.type = 'sine'; o.frequency.value = f;
     lfo.frequency.value = 5.2;
     lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(f * 0.012, t + 0.25);
     lfo.connect(lg); lg.connect(o.frequency);
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.09, t + 0.08);
-    g.gain.setValueAtTime(0.09, t + dur * 0.7);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.08);
+    g.gain.setValueAtTime(vol, t + dur * 0.7);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.15);
     o.connect(g); g.connect(this.music); g.connect(this.echo);
     o.start(t); lfo.start(t); o.stop(t + dur + 0.2); lfo.stop(t + dur + 0.2);
@@ -258,7 +340,7 @@ function toggleMute() { Sound.init(); Sound.setMuted(!Sound.muted); }
    ========================================================================= */
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const bgCanvases = [0, 1, 2].map(() => document.createElement('canvas'));
+const bgCanvases = [0, 1, 2, 3].map(() => document.createElement('canvas'));
 let scale = 1;
 
 function resize() {
@@ -301,6 +383,13 @@ const STAGES = [
     cloud: 'rgba(10,0,4,0.6)', far: 'rgba(50,6,14,0.85)', mid: '#22040a', near: '#0e0104',
     deco: '#0a0003', trees: '#070002', mist: '200,30,30', ground: ['#120206', '#020001'],
     line: 'rgba(255,60,50,0.3)', stars: 90, ember: '255,90,60', pagoda: 360, torii: 1050,
+  },
+  { // 3: dawn (story)
+    sky: [[0, '#1d2347'], [0.35, '#5b4a7a'], [0.62, '#d68a8a'], [0.85, '#f7c58f'], [1, '#ffe3b0']],
+    orb: { x: 1000, y: 545, r: 150, c0: '#fffaf0', c1: '#ffe0b0', glow: '255,215,170', moon: false },
+    cloud: 'rgba(90,60,100,0.3)', far: 'rgba(90,70,110,0.6)', mid: '#3a2a48', near: '#1d1424',
+    deco: '#150e1b', trees: '#100a15', mist: '255,210,190', ground: ['#1a1220', '#050307'],
+    line: 'rgba(255,210,170,0.3)', stars: 15, ember: '255,230,200', pagoda: -500, torii: -500,
   },
 ];
 
@@ -479,6 +568,18 @@ const POSES = {
   hit:        P(-0.45, -0.20, 0.80, -0.50, 0.60, 0.30, -0.30, -0.50, -0.20, -0.30),
   ko:         P(-0.30, -1.20, 0.30, -2.00, 0.20, 0.40, -0.10,  0.10, -0.10, -0.40),
   victory:    P(0.00,  2.95, 0.25,  0.40, 2.10,  0.30, -0.30, -0.30, -0.10, -0.15),
+  // story / cutscene poses
+  swordHigh:  P(-0.05, 2.90, 0.40,  2.60, 0.70,  0.50, -0.50, -0.40, -0.20),
+  swordStrike:P(0.35,  1.35, 0.10,  1.15, 0.30,  0.75, -0.60, -0.55, -0.10),
+  swordRest:  P(0.05,  0.55, 0.30,  0.35, 0.50,  0.35, -0.30, -0.35, -0.10),
+  runA:       P(0.40,  1.50, 1.40, -0.70, 1.30,  1.10, -1.30, -0.70, -0.60),
+  runB:       P(0.40, -0.60, 1.30,  1.40, 1.50, -0.60, -0.70,  1.10, -1.50),
+  kneel:      P(0.45,  0.95, 0.70,  0.75, 0.90,  1.50, -1.50,  0.10, -1.67, 0.35),
+  kneelDefeat:P(0.60,  0.15, 0.10,  0.05, 0.10,  1.50, -1.50,  0.10, -1.67, 0.50),
+  sit:        P(0.05,  0.80, -0.40, 0.40, -0.20, 1.50, -0.15,  1.35, -0.35, 0.00),
+  sitLaugh:   P(-0.12, 0.90, -0.20, 0.50, -0.10, 1.50, -0.15,  1.35, -0.35, -0.25),
+  wave:       P(0.02,  2.70, 0.60,  0.30, 0.20,  0.30, -0.30, -0.30, -0.10, -0.10),
+  lookUp:     P(-0.05, 0.40, 0.30,  0.30, 0.30,  0.35, -0.30, -0.35, -0.10, -0.25),
 };
 // [windup pose, strike pose] for each attack
 const ATTACK_POSES = {
@@ -506,6 +607,11 @@ addEventListener('keydown', e => {
   const c = e.code;
   if (c === 'KeyM') { toggleMute(); return; }
   if (c === 'KeyI' && scene === 'battle') { save.vision = !save.vision; writeSave(); Sound.blip(); return; }
+  if (scene === 'cutscene') {                 // story: Enter/Esc skip all, Space next panel
+    if (c === 'Enter' || c === 'NumpadEnter' || c === 'Escape') finishCutscene();
+    else if (c === 'Space') advancePanel();
+    return;
+  }
 
   const m = activeMenu();
   if (m) {
@@ -515,11 +621,12 @@ addEventListener('keydown', e => {
     else if ((c === 'Escape' || (c === 'KeyP' && paused)) && m.back) { Sound.blip(); m.back(); }
     return;
   }
-  if (scene === 'vs') { if (isConfirm(c)) startMatch(); return; }
+  if (scene === 'vs') { if (c === 'Escape') startMatch(); else if (isConfirm(c)) advanceVS(); return; }
   if (scene === 'victory') { if (isConfirm(c) || c === 'Escape') goMenu(); return; }
   if (scene === 'battle') {
+    if (game.state === 'outro') { if (isConfirm(c)) advanceOutro(false); else if (c === 'Escape') advanceOutro(true); return; }
     if ((c === 'KeyP' || c === 'Escape') && game.state !== 'end') { pauseGame(); return; }
-    if (game.state === 'end' && playerWonMatch() && isConfirm(c)) { nextStage(); return; }
+    if (game.state === 'end' && playerWonMatch() && isConfirm(c)) { startOutro(); return; }
     buf[c] = 10;
   }
 });
@@ -554,9 +661,11 @@ canvas.addEventListener('mousedown', e => {
     if (i >= 0) { m.sel = i; activate(m); }
     return;
   }
-  if (scene === 'vs') startMatch();
+  if (scene === 'cutscene') advancePanel();
+  else if (scene === 'vs') advanceVS();
   else if (scene === 'victory') goMenu();
-  else if (scene === 'battle' && game.state === 'end' && playerWonMatch()) nextStage();
+  else if (scene === 'battle' && game.state === 'outro') advanceOutro(false);
+  else if (scene === 'battle' && game.state === 'end' && playerWonMatch()) startOutro();
 });
 
 function playerInput() {
@@ -765,7 +874,7 @@ class Fighter {
     let target, rate = 0.2;
     const ph = this.attackPhase;
     if (this.ko || this.downT > 0) { target = POSES.ko; rate = 0.15; }
-    else if (this.forcePose) { target = POSES[this.forcePose]; rate = 0.12; }
+    else if (this.forcePose) { target = POSES[this.forcePose]; rate = this.forceRate || 0.12; }
     else if (this.hitstun > 0) { target = POSES.hit; rate = 0.45; }
     else if (this.attack) {
       const A = ATTACK_POSES[this.attack.type];
@@ -782,6 +891,7 @@ class Fighter {
     for (let i = 0; i < this.pose.length; i++) this.pose[i] += (target[i] - this.pose[i]) * rate;
     const fallTarget = this.ko || this.downT > 0 ? 1 : 0;
     this.fall += (fallTarget - this.fall) * (fallTarget ? 0.13 : 0.18);
+    if (this.fixedFall != null) this.fall = this.fixedFall;      // cutscene: hold a lean
     this.computeSkeleton();
     if (this.tail.length) this.updateTail();
   }
@@ -1420,6 +1530,7 @@ const playerWonMatch = () => game.wins[0] >= 2;
 const menus = {
   main: { sel: 0, items: [
     { label: 'FIGHT', act: () => startStory() },
+    { label: 'STORY', act: () => playCutscene(INTRO, goMenu) },
     { label: 'CONTROLS', act: () => { scene = 'controls'; sceneT = 0; menus.controls.sel = 0; } },
   ] },
   controls: { sel: 0, items: [{ label: 'BACK', act: () => goMenu() }], back: () => goMenu() },
@@ -1430,7 +1541,7 @@ const menus = {
   ], back: () => resumeGame() },
   lose: { sel: 0, items: [
     { label: 'TRY AGAIN', act: () => { story.stats.retries++; startMatch(); } },
-    { label: 'MENU', act: () => goMenu() },
+    { label: 'MAIN MENU', act: () => goMenu() },
   ] },
 };
 
@@ -1439,7 +1550,7 @@ function activeMenu() {
   if (scene === 'controls') return menus.controls;
   if (scene === 'battle') {
     if (paused) return menus.pause;
-    if (game.state === 'end' && !playerWonMatch() && game.t > 0.8) return menus.lose;
+    if (game.state === 'end' && !playerWonMatch() && game.t > 2.8) return menus.lose;
   }
   return null;
 }
@@ -1453,7 +1564,10 @@ function goMenu() {
 
 function startStory() {
   story.stage = 0; story.time = 0; story.stats = newStats();
-  goVS();
+  if (!save.storySeen) {                      // first time: play the intro, then the first VS screen
+    save.storySeen = true; writeSave();
+    playCutscene(INTRO, goVS);
+  } else goVS();
 }
 
 function goVS() {
@@ -1462,7 +1576,27 @@ function goVS() {
   const opp = currentOpp();
   vsPlayer = new Fighter(330, 1, 'YOU', true);
   vsEnemy = new Fighter(950, -1, opp.name, false, opp);
+  vsDlg.i = 0; vsDlg.t = 0;
   Sound.whoosh(1.6);
+}
+
+// VS dialogue: Enter/click completes the typing, then advances; after the last line the fight starts
+function advanceVS() {
+  if (scene !== 'vs' || sceneT < 0.8) return;
+  const lines = currentOpp().lines, line = lines[vsDlg.i];
+  if (!line) { startMatch(); return; }
+  if (vsDlg.t * 40 < line.text.length) { vsDlg.t = 999; return; }
+  vsDlg.i++; vsDlg.t = 0;
+  Sound.blip();
+  if (vsDlg.i >= lines.length) startMatch();
+}
+
+// After winning a match: the opponent's defeat line, then continue
+function startOutro() { game.state = 'outro'; game.t = 0; Sound.blip(); }
+function advanceOutro(skip) {
+  if (game.state !== 'outro') return;
+  if (!skip && (game.t - 0.4) * 32 < currentOpp().defeat.length) { game.t = 99; return; }
+  nextStage();
 }
 
 function startMatch() {
@@ -1480,12 +1614,16 @@ function startMatch() {
 function nextStage() {
   story.stage++;
   if (story.stage >= OPPONENTS.length) {
-    scene = 'victory'; sceneT = 0;
     save.best = OPPONENTS.length; writeSave();
-    victoryFighter = new Fighter(300, 1, 'YOU', true);
-    victoryFighter.forcePose = 'victory';
-    Sound.gong(); setTimeout(() => Sound.ding(), 400);
+    playCutscene(ENDING, showVictory);       // ending cutscene, then the stats screen
   } else goVS();
+}
+
+function showVictory() {
+  scene = 'victory'; sceneT = 0;
+  victoryFighter = new Fighter(300, 1, 'YOU', true);
+  victoryFighter.forcePose = 'victory';
+  Sound.gong(); setTimeout(() => Sound.ding(), 400);
 }
 
 function pauseGame() { if (!paused) { paused = true; menus.pause.sel = 0; Sound.blip(); } }
@@ -1616,7 +1754,8 @@ function step() {
 // Menus / VS / victory: idle animation only
 function sceneStep() {
   updateEmbers();
-  for (const f of [menuFighter, vsPlayer, vsEnemy, victoryFighter]) {
+  const list = scene === 'cutscene' ? csFighters() : [menuFighter, vsPlayer, vsEnemy, victoryFighter];
+  for (const f of list) {
     if (f) f.update(emptyInput(), { x: f.x + f.facing * 999 });
   }
 }
@@ -1764,6 +1903,7 @@ function drawFighter(f) {
   // hair / headband tail goes behind the body when it is black hair
   if (f.tail.length && f.look === 'ponytail') drawTail(f);
   drawBody(k, f.thick);
+  if (f.weapon) drawWeapon(f, k);
   ctx.shadowBlur = 0;
   ctx.translate(k.head.x, k.head.y);
   ctx.rotate(k.rot);
@@ -1771,6 +1911,29 @@ function drawFighter(f) {
   drawLook(f);
   ctx.restore();
   if (f.tail.length && f.look !== 'ponytail') drawTail(f);
+}
+
+// Story props: katana or spear held along the front forearm
+function drawWeapon(f, k) {
+  const dx = k.hF.x - k.eF.x, dy = k.hF.y - k.eF.y, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d, S = f.size;
+  const at = l => ({ x: k.hF.x + ux * l * S, y: k.hF.y + uy * l * S });
+  ctx.lineCap = 'round';
+  if (f.weapon === 'sword') {
+    seg(at(-10), at(6), 7 * S);                       // handle
+    seg(at(6), at(84), 4 * S);                        // blade
+    ctx.save(); ctx.strokeStyle = 'rgba(255,230,210,0.25)';
+    seg(at(10), at(80), 1.2);                         // faint edge glint
+    ctx.restore();
+    const g = at(6);                                  // guard
+    seg({ x: g.x - uy * 7, y: g.y + ux * 7 }, { x: g.x + uy * 7, y: g.y - ux * 7 }, 4 * S);
+  } else if (f.weapon === 'spear') {
+    seg(at(-90), at(70), 4 * S);
+    const tip = at(70), b = at(52);
+    ctx.beginPath();
+    ctx.moveTo(tip.x + ux * 16, tip.y + uy * 16);
+    ctx.lineTo(b.x - uy * 6, b.y + ux * 6); ctx.lineTo(b.x + uy * 6, b.y - ux * 6);
+    ctx.closePath(); ctx.fill();
+  }
 }
 
 function drawTail(f) {
@@ -2002,19 +2165,34 @@ function drawBattleOverlay() {
     bigText(game.banner, W / 2, H / 2 - 100, game.banner === 'K.O.' ? 170 : 120, bannerGrad(H / 2 - 160, H / 2), sc);
     if (t > 1.3) bigText(res, W / 2, H / 2 + 40, game.matchOver ? 84 : 60, resCol, 1 + Math.max(0, 1.5 - t) * 3, 1, FONT);
   }
-  if (game.state === 'end') {
+  if (game.state === 'end' && playerWonMatch()) {
     // compact header + BATTLE ANALYSIS panel
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.fillRect(0, 0, W, H);
     bigText(game.banner, W / 2, 88, 80, bannerGrad(50, 125));
     bigText(res, W / 2, 162, 56, resCol, 1 + Math.max(0, 0.2 - t) * 3, 1, FONT);
     if (game.analysis) drawAnalysis(game.analysis, 250, 200, 780, 395, t);
-    if (playerWonMatch()) {
-      if (t > 0.6) {
-        const last = story.stage >= OPPONENTS.length - 1;
-        bigText(last ? 'Press ENTER' : 'Press ENTER to face the next opponent', W / 2, 648, 28, '#f4e6c8', 1, 0.6 + 0.4 * Math.sin(t * 5), FONT);
-      }
-    } else if (t > 0.8) drawMenuButtons(menus.lose, W / 2, 648, 310, 260, 50, true);
+    if (t > 0.6) bigText('Press ENTER to continue', W / 2, 648, 28, '#f4e6c8', 1, 0.6 + 0.4 * Math.sin(t * 5), FONT);
+  }
+  if (game.state === 'end' && !playerWonMatch()) {
+    // DEFEAT: slow fade with a story line, then analysis + TRY AGAIN / MAIN MENU
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(0.86, t / 1.6 * 0.86)})`;
+    ctx.fillRect(0, 0, W, H);
+    const k = clamp((t - 2.3) / 0.6, 0, 1), e = k * k * (3 - 2 * k);
+    bigText("You couldn't protect them this time.", W / 2, (H / 2 - 20) + (105 - (H / 2 - 20)) * e, 52 - 14 * e,
+      '#ecdccc', 1, clamp((t - 0.4) / 1.2, 0, 1));
+    if (t > 2.8) {
+      if (game.analysis) drawAnalysis(game.analysis, 250, 160, 780, 395, t - 2.8);
+      drawMenuButtons(menus.lose, W / 2, 620, 310, 260, 50, true);
+    }
+  }
+  if (game.state === 'outro') {
+    // the beaten opponent's last words
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(0.55, t * 1.2)})`;
+    ctx.fillRect(0, 0, W, H);
+    const opp = currentOpp();
+    if (t > 0.3) drawSpeech(opp.name, opp.defeat, W / 2, 470, 760, 'opp', (t - 0.4) * 32, null);
+    text('ENTER / CLICK  continue', W / 2, H - 20, 17, 'rgba(244,230,200,0.6)');
   }
   if (game.state === 'intro' || game.state === 'fight') {
     text('P / Esc  pause   ·   I  AI vision', 22, H - 18, 15, 'rgba(244,230,200,0.5)', 'left');
@@ -2174,8 +2352,9 @@ function renderBattle() {
   drawParticles();
   drawPopups();
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
-  if (game.state !== 'end') drawHUD();
-  if (save.vision && game.state !== 'end') drawVision();
+  const post = game.state === 'end' || game.state === 'outro';
+  if (!post) drawHUD();
+  if (save.vision && !post) drawVision();
   if (game.state === 'fight' || game.state === 'ko') drawAiMsg();
   drawBattleOverlay();
 
@@ -2216,7 +2395,7 @@ function renderMenu() {
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   drawTitle(165, 120);
   bigText('A SILHOUETTE FIGHTING GAME', W / 2, 262, 22, '#fff0dc', 1, 1, FONT);
-  drawMenuButtons(menus.main, W / 2 + 40, 360, 84);
+  drawMenuButtons(menus.main, W / 2 + 40, 342, 68, 320, 54);
   let best;
   if (save.best >= OPPONENTS.length) best = '★  SHADOW MASTER  ★';
   else if (save.best >= 0) best = 'HIGHEST OPPONENT REACHED:  ' + OPPONENTS[save.best].name + '  (' + (save.best + 1) + '/3)';
@@ -2278,7 +2457,7 @@ function renderVS() {
   ctx.fillStyle = 'rgba(70,20,110,0.35)';
   ctx.beginPath(); ctx.moveTo(W, 0); ctx.lineTo(W - 580 * e, 0); ctx.lineTo(W - 700 * e, H); ctx.lineTo(W, H); ctx.fill();
 
-  text('OPPONENT ' + (story.stage + 1) + ' / 3   ·   ' + opp.tag, W / 2, 50, 24, '#d8b06a');
+  text('OPPONENT ' + (story.stage + 1) + ' / 3   ·   ' + opp.tag + '   ·   ' + opp.role.toUpperCase(), W / 2, 44, 22, '#d8b06a');
   // silhouettes slide in
   const off = (1 - e) * 520;
   vsPlayer.x = 330 - off; vsEnemy.x = 950 + off;
@@ -2289,19 +2468,18 @@ function renderVS() {
 
   const pop = sceneT < 0.45 ? 0 : 1 + Math.max(0, 0.7 - sceneT) * 2;
   if (pop) bigText('VS', W / 2, 330, 150, '#ff4b2b', pop);
-  bigText('YOU', 330 - off, 660, 52, '#f4e6c8');
+  bigText('KAITO', 330 - off, 660, 52, '#f4e6c8');
   bigText(opp.name, 950 + off, 660, 64, '#ff5a3c');
-  if (sceneT > 0.6) {
+  // pre-fight dialogue (speech boxes, Enter/click to advance)
+  const line = opp.lines[vsDlg.i];
+  if (sceneT > 0.8 && line) {
     ctx.save();
-    ctx.globalAlpha = Math.min(1, (sceneT - 0.6) * 3);
-    ctx.font = `italic 26px Georgia, serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.lineWidth = 5; ctx.strokeStyle = '#000';
-    const q = '"' + opp.taunt + '"';
-    ctx.strokeText(q, W / 2, 120); ctx.fillStyle = '#f4e6c8'; ctx.fillText(q, W / 2, 120);
+    ctx.globalAlpha = Math.min(1, (sceneT - 0.8) * 4);
+    const kaito = line.who === 'kaito';
+    drawSpeech(kaito ? 'KAITO' : opp.name, line.text, kaito ? 380 : 900, 82, 580, line.who, vsDlg.t * 40, kaito ? 330 : 950);
     ctx.restore();
   }
-  if (sceneT > 1.2) text('Press ENTER to fight', W / 2, H - 22, 20, `rgba(244,230,200,${0.5 + 0.4 * Math.sin(sceneT * 5)})`);
+  if (sceneT > 0.8) text('ENTER / CLICK  next     ·     ESC  skip to fight', W / 2, H - 20, 17, `rgba(244,230,200,${0.45 + 0.3 * Math.sin(sceneT * 4)})`);
 }
 
 function renderVictory() {
@@ -2342,9 +2520,417 @@ function renderVictory() {
   if (sceneT > 1.8) text('Press ENTER to return to the menu', W / 2 + 220, H - 60, 22, `rgba(244,230,200,${0.5 + 0.4 * Math.sin(sceneT * 5)})`);
 }
 
+/* =========================================================================
+   15b. STORY — "THE LAST PROMISE": cutscene engine, panels, dialogue boxes
+   A cutscene is a list of panels. Each panel: background, camera drift,
+   actors (Fighter silhouettes driven by forcePose), particles, typed text.
+   ========================================================================= */
+let cs = null;                       // active cutscene state
+const vsDlg = { i: 0, t: 0 };        // VS-screen dialogue progress
+
+function playCutscene(panels, onDone) {
+  scene = 'cutscene'; sceneT = 0; paused = false;
+  cs = { panels, i: -1, onDone, done: false, fx: [], actors: {} };
+  nextPanel();
+  Sound.setMood('story');
+}
+function nextPanel() {
+  cs.i++;
+  if (cs.i >= cs.panels.length) { finishCutscene(); return; }
+  const p = cs.panels[cs.i];
+  cs.t = 0; cs.out = null; cs.fx = [];
+  cs.actors = p.setup ? p.setup() : {};
+  cs.dur = Math.max(p.dur || 6, p.text ? p.text.length / (p.cps || 28) + 2.6 : 0);
+  Sound.setFire(!!p.fire);
+}
+function advancePanel() { if (cs && !cs.done && cs.out === null && cs.t > 0.3) { cs.out = 0.45; cs.outMax = 0.45; } }
+function finishCutscene() {               // safe to call many times (skip spam)
+  if (!cs || cs.done) return;
+  cs.done = true;
+  Sound.setFire(false);
+  Sound.setMood('battle');
+  cs.onDone();
+}
+function updateCutscene(dt) {
+  if (!cs || cs.done) return;
+  const p = cs.panels[cs.i];
+  cs.t += dt;
+  if (p.update) p.update(cs.actors, cs.t, dt);
+  updateCsFx(p, dt);
+  if (cs.out !== null) { cs.out -= dt; if (cs.out <= 0) nextPanel(); }
+  else if (cs.t >= cs.dur) { cs.out = 0.7; cs.outMax = 0.7; }
+}
+function csFighters() {
+  if (!cs || cs.done) return [];
+  const out = [];
+  for (const v of Object.values(cs.actors)) {
+    if (v instanceof Fighter) out.push(v);
+    else if (Array.isArray(v)) v.forEach(f => { if (f instanceof Fighter) out.push(f); });
+  }
+  return out;
+}
+
+// ---- cutscene particles: smoke, rising/falling embers, golden motes ----
+function updateCsFx(p, dt) {
+  const k = dt * 60, fx = cs.fx;
+  if (p.fires) for (const [x, base, w] of p.fires) {
+    if (Math.random() < 0.22 * k) fx.push({ type: 'smoke', x: x + (Math.random() - 0.5) * w, y: base - 70 - Math.random() * 40, vx: 0.25 + Math.random() * 0.4, vy: -0.6 - Math.random() * 0.6, r: 14 + Math.random() * 16, life: 0, max: 220 + Math.random() * 100, a: 0.3 });
+    if (Math.random() < 0.5 * k) fx.push({ type: 'ember', x: x + (Math.random() - 0.5) * w, y: base - 30 - Math.random() * 60, vx: (Math.random() - 0.3) * 1.2, vy: -1 - Math.random() * 2, r: 1 + Math.random() * 2, life: 0, max: 80 + Math.random() * 80 });
+  }
+  if (p.smokes) for (const [x, base, w] of p.smokes)
+    if (Math.random() < 0.08 * k) fx.push({ type: 'smoke', x: x + (Math.random() - 0.5) * w, y: base - 40, vx: 0.35 + Math.random() * 0.3, vy: -0.35 - Math.random() * 0.3, r: 8 + Math.random() * 10, life: 0, max: 300, a: 0.18 });
+  if (p.falling && Math.random() < 0.35 * k) fx.push({ type: 'ember', x: Math.random() * W, y: -10, vx: (Math.random() - 0.5) * 0.6, vy: 0.5 + Math.random() * 0.8, r: 1 + Math.random() * 2, life: 0, max: 500 });
+  if (p.motes && Math.random() < 0.18 * k) fx.push({ type: 'mote', x: Math.random() * W, y: H * 0.35 + Math.random() * H * 0.5, vx: (Math.random() - 0.5) * 0.3, vy: -0.15 - Math.random() * 0.3, r: 1.5 + Math.random() * 2.5, life: 0, max: 300 });
+  for (const f of fx) {
+    f.life += k; f.x += f.vx * k; f.y += f.vy * k;
+    if (f.type === 'smoke') f.r += 0.15 * k;
+    else f.vx += Math.sin(f.life * 0.05) * 0.02 * k;
+  }
+  cs.fx = fx.filter(f => f.life < f.max && f.y < H + 20);
+  if (cs.fx.length > 450) cs.fx.splice(0, cs.fx.length - 450);
+}
+function drawCsFx() {
+  ctx.save();
+  for (const f of cs.fx) if (f.type === 'smoke') {
+    const a = f.a * (1 - f.life / f.max) * Math.min(1, f.life / 25);
+    ctx.fillStyle = `rgba(18,8,12,${a})`;
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'lighter';
+  for (const f of cs.fx) {
+    if (f.type === 'smoke') continue;
+    const a = (1 - f.life / f.max) * (f.type === 'mote' ? 0.6 : 0.9);
+    ctx.fillStyle = f.type === 'mote' ? `rgba(255,220,150,${a})` : `rgba(255,${120 + (f.r * 30 | 0)},40,${a})`;
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ---- scenery helpers ----
+function drawHouse(x, base, w, h, col, broken) {
+  ctx.fillStyle = col;
+  if (!broken) {
+    ctx.fillRect(x - w / 2, base - h, w, h);
+    ctx.beginPath();
+    ctx.moveTo(x - w * 0.7, base - h + 6);
+    ctx.quadraticCurveTo(x - w * 0.45, base - h - 4, x - w * 0.3, base - h - h * 0.45);
+    ctx.lineTo(x + w * 0.3, base - h - h * 0.45);
+    ctx.quadraticCurveTo(x + w * 0.45, base - h - 4, x + w * 0.7, base - h + 6);
+    ctx.closePath(); ctx.fill();
+  } else {                                   // ruined: broken walls + fallen beams + rubble
+    ctx.fillRect(x - w / 2, base - h * 0.55, w * 0.18, h * 0.55);
+    ctx.fillRect(x + w * 0.25, base - h * 0.85, w * 0.15, h * 0.85);
+    ctx.save(); ctx.translate(x, base - h * 0.5); ctx.rotate(0.35); ctx.fillRect(-w * 0.55, -6, w * 1.1, 12); ctx.restore();
+    ctx.save(); ctx.translate(x - w * 0.1, base - h * 0.25); ctx.rotate(-0.5); ctx.fillRect(-w * 0.4, -5, w * 0.8, 10); ctx.restore();
+    ctx.beginPath();
+    ctx.moveTo(x - w * 0.6, base); ctx.lineTo(x - w * 0.3, base - 18); ctx.lineTo(x, base - 10);
+    ctx.lineTo(x + w * 0.35, base - 22); ctx.lineTo(x + w * 0.6, base); ctx.closePath(); ctx.fill();
+  }
+}
+function drawFire(x, base, w, h, t, seed) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const flick = 0.85 + 0.15 * Math.sin(t * 9 + seed);
+  const glow = ctx.createRadialGradient(x, base - h * 0.4, 10, x, base - h * 0.4, w * 1.6);
+  glow.addColorStop(0, `rgba(255,140,40,${0.35 * flick})`); glow.addColorStop(1, 'rgba(255,60,20,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(x - w * 1.6, base - h * 0.4 - w * 1.6, w * 3.2, w * 3.2);
+  const n = 6;
+  for (let i = 0; i < n; i++) {
+    const fx = x + (i / (n - 1) - 0.5) * w * 0.9;
+    const fh = h * (0.55 + 0.45 * Math.abs(Math.sin(t * 6 + i * 1.9 + seed)));
+    const fw = w / n * 1.4;
+    const g = ctx.createLinearGradient(0, base, 0, base - fh);
+    g.addColorStop(0, 'rgba(255,220,120,0.9)'); g.addColorStop(0.5, 'rgba(255,120,30,0.7)'); g.addColorStop(1, 'rgba(200,30,10,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(fx - fw / 2, base);
+    ctx.quadraticCurveTo(fx - fw * 0.6, base - fh * 0.5, fx + Math.sin(t * 5 + i) * fw * 0.4, base - fh);
+    ctx.quadraticCurveTo(fx + fw * 0.6, base - fh * 0.5, fx + fw / 2, base);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+function drawBurning(list, t, broken, col = '#0d0206') {
+  list.forEach(([x, base, w, h], i) => {
+    drawHouse(x, base, w * 1.1, h * 0.9, col, broken);
+    drawFire(x, base - h * 0.25, w, h * 1.1, t, i * 2.3);
+  });
+}
+// draw a Fighter silhouette; opts.at = [screenX, screenY, scale], opts.glow = color
+function drawActor(f, opts = {}) {
+  ctx.save();
+  if (opts.alpha != null) ctx.globalAlpha = opts.alpha;
+  if (opts.at) { ctx.translate(opts.at[0], opts.at[1]); ctx.scale(opts.at[2], opts.at[2]); ctx.translate(-f.x, -GROUND); }
+  if (!opts.noShadow) drawShadow(f);
+  if (opts.glow) { ctx.shadowColor = opts.glow; ctx.shadowBlur = 30; }
+  drawFighter(f);
+  ctx.restore();
+}
+function newActor(x, facing, prof, pose, extra = {}) {
+  const f = new Fighter(x, facing, '', prof === PLAYER_PROFILE || prof === KAITO_WIND, prof);
+  f.forcePose = pose; f.pose = POSES[pose].slice(); f.computeSkeleton();
+  return Object.assign(f, extra);
+}
+
+// ---- text helpers ----
+function wrapLines(str, maxW, font) {
+  ctx.font = font;
+  const lines = []; let line = '';
+  for (const w of str.split(' ')) {
+    const test = line ? line + ' ' + w : w;
+    if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; } else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+// centered, typed-out text (line breaks computed on the FULL text so it never reflows)
+function drawTyped(full, chars, cx, y, maxW, lh, font, color, align = 'center') {
+  const lines = wrapLines(full, maxW, font);
+  ctx.font = font; ctx.textAlign = align; ctx.textBaseline = 'middle';
+  let left = Math.max(0, Math.floor(chars));
+  const y0 = align === 'center' ? y - (lines.length - 1) * lh / 2 : y;
+  lines.forEach((ln, i) => {
+    if (left <= 0) return;
+    const part = ln.slice(0, left);
+    left -= ln.length + 1;
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineJoin = 'round';
+    ctx.strokeText(part, cx, y0 + i * lh);
+    ctx.fillStyle = color;
+    ctx.fillText(part, cx, y0 + i * lh);
+  });
+  return Math.floor(chars) >= full.length;
+}
+// Speech box used on VS screens and for defeat lines
+function drawSpeech(name, line, cx, y, w, who, chars, tailX) {
+  const h = 104, x = cx - w / 2, col = who === 'kaito' ? '#f4e6c8' : '#ff6a4a';
+  ctx.save();
+  ctx.fillStyle = 'rgba(6,2,6,0.85)';
+  ctx.fillRect(x, y, w, h);
+  if (tailX != null) {
+    ctx.beginPath(); ctx.moveTo(tailX - 14, y + h); ctx.lineTo(tailX + 14, y + h); ctx.lineTo(tailX, y + h + 22); ctx.closePath(); ctx.fill();
+  }
+  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+  text(name, x + 16, y + 18, 22, col, 'left', BRUSH);
+  const done = drawTyped(line, chars, x + 18, y + 52, w - 36, 28, 'italic 23px Georgia, serif', '#f4ece0', 'left');
+  if (done) text('▶', x + w - 18, y + h - 16, 16, `rgba(255,240,220,${0.5 + 0.5 * Math.sin(performance.now() / 180)})`, 'right');
+  ctx.restore();
+  return done;
+}
+
+/* ---- INTRO PANELS ---- */
+const INTRO = [
+  { // 1. PEACE
+    bg: 0, dur: 6.5, motes: true, cam: [0, -40, 1.0, 1.07, 640, 520],
+    text: 'Once, Kaito had everything worth protecting.',
+    setup: () => ({
+      k: newActor(470, 1, PLAYER_PROFILE, 'swordHigh', { weapon: 'sword', forceRate: 0.18 }),
+      y: newActor(720, -1, YUNA_PROFILE, 'sit'),
+    }),
+    update(a, t) {
+      a.k.forcePose = Math.floor(t / 0.75) % 2 ? 'swordStrike' : 'swordHigh';
+      a.y.forcePose = (t % 1.6 < 0.9 && Math.floor(t * 6) % 2) ? 'sitLaugh' : 'sit';
+      a.y.forceRate = 0.3;
+    },
+    draw(a) {
+      drawHouse(920, GROUND, 240, 120, '#1c0812', false);
+      ctx.fillStyle = '#1c0812';                       // little fence
+      for (let i = 0; i < 6; i++) ctx.fillRect(1060 + i * 26, GROUND - 40, 6, 40);
+      ctx.fillRect(1055, GROUND - 32, 150, 5);
+      drawActor(a.y); drawActor(a.k);
+    },
+  },
+  { // 2. THE ATTACK
+    bg: 2, dur: 6.5, fire: true, cam: [30, -20, 1.08, 1.0, 640, 500],
+    fires: [[200, GROUND, 170, 120], [520, GROUND, 150, 100], [820, GROUND, 180, 130]],
+    text: 'Then the Shogun came.',
+    setup: () => ({
+      s: newActor(1100, -1, OPPONENTS[2], 'idleA'),
+      sol: [0, 1, 2].map(i => newActor(260 + i * 150, 1, SOLDIER_PROFILE, 'walkA', { weapon: 'spear', forceRate: 0.15 })),
+    }),
+    update(a, t, dt) {
+      a.sol.forEach((f, i) => { f.x += 38 * dt; f.forcePose = Math.floor(t * 2.6 + i) % 2 ? 'walkA' : 'walkB'; });
+    },
+    draw(a, t) {
+      drawBurning(this.fires, t, false);
+      ctx.fillStyle = '#060102';                       // hill
+      ctx.beginPath(); ctx.ellipse(1100, GROUND + 10, 230, 120, 0, Math.PI, 0); ctx.fill();
+      drawActor(a.s, { at: [1100, GROUND - 108, 0.95], noShadow: true });
+      a.sol.forEach(f => drawActor(f));
+    },
+  },
+  { // 3. THE RETURN
+    bg: 2, dur: 6, fire: true, cam: [60, -60, 1.05, 1.05, 640, 520],
+    fires: [[180, GROUND, 160, 110], [640, GROUND, 200, 130], [1100, GROUND, 170, 120]],
+    text: 'He returned too late.',
+    setup: () => ({ k: newActor(110, 1, PLAYER_PROFILE, 'runA', { forceRate: 0.32 }) }),
+    update(a, t) {
+      a.k.x = Math.min(1150, 110 + t * 170);
+      a.k.forcePose = Math.floor(t * 4.5) % 2 ? 'runA' : 'runB';
+    },
+    draw(a, t) {
+      drawBurning(this.fires, t, true, '#0b0205');
+      drawActor(a.k);
+      ctx.fillStyle = '#030001';                       // foreground debris
+      ctx.save(); ctx.translate(380, GROUND + 40); ctx.rotate(-0.12); ctx.fillRect(-160, -10, 320, 20); ctx.restore();
+      ctx.save(); ctx.translate(960, GROUND + 50); ctx.rotate(0.18); ctx.fillRect(-140, -9, 280, 18); ctx.restore();
+    },
+  },
+  { // 4. THE PROMISE
+    bg: 2, dur: 9, cps: 15, fire: true, falling: true, tint: 'rgba(40,0,0,0.35)', cam: [0, 0, 1.0, 1.18, 610, 545],
+    fires: [[1080, GROUND, 150, 90], [150, GROUND, 140, 80]],
+    text: 'Yuna: "Promise me... you\'ll protect others. So nobody has to feel as scared as I did."',
+    setup: () => {
+      const y = newActor(775, 1, YUNA_PROFILE, 'ko');
+      Object.assign(y, { ko: true, landedKO: true, fall: 0.74, fixedFall: 0.74 });   // propped up in his arms
+      y.computeSkeleton();
+      return { k: newActor(560, 1, PLAYER_PROFILE, 'kneel'), y };
+    },
+    draw(a, t) {
+      drawBurning(this.fires, t, true, '#0b0205');
+      drawHouse(640, GROUND, 440, 210, '#2a0a12', true);       // lighter = further back
+      ctx.save();                                              // warm firelight behind them
+      ctx.globalCompositeOperation = 'lighter';
+      const fl = 0.9 + 0.1 * Math.sin(t * 7);
+      const g = ctx.createRadialGradient(630, 540, 20, 630, 540, 300);
+      g.addColorStop(0, `rgba(255,120,40,${0.45 * fl})`); g.addColorStop(1, 'rgba(255,60,20,0)');
+      ctx.fillStyle = g; ctx.fillRect(330, 240, 600, 420);
+      ctx.restore();
+      drawActor(a.y, { noShadow: true, glow: 'rgba(255,150,80,0.9)' });   // firelit rim
+      ctx.fillStyle = '#050102';                       // collapsed beams over her legs
+      ctx.save(); ctx.translate(790, GROUND - 14); ctx.rotate(-0.28); ctx.fillRect(-60, -8, 130, 16); ctx.restore();
+      ctx.save(); ctx.translate(830, GROUND - 22); ctx.rotate(0.42); ctx.fillRect(-55, -7, 120, 14); ctx.restore();
+      drawActor(a.k);
+    },
+  },
+  { // 5. THE BEGINNING
+    bg: 3, dur: 7, motes: true, cam: [0, 0, 1.12, 1.0, 640, 560],
+    smokes: [[880, GROUND, 120], [1110, GROUND, 120], [260, GROUND, 100]],
+    text: 'A promise was made. A journey began.',
+    setup: () => ({ k: newActor(560, 1, KAITO_WIND, 'swordRest', { weapon: 'sword' }) }),
+    draw(a) {
+      drawHouse(880, GROUND, 230, 130, '#140c18', true);
+      drawHouse(1110, GROUND, 200, 110, '#140c18', true);
+      drawHouse(260, GROUND, 190, 100, '#140c18', true);
+      drawActor(a.k);
+    },
+  },
+];
+
+/* ---- ENDING PANELS ---- */
+const ENDING = [
+  { // 1. Shogun falls to his knees
+    bg: 2, dur: 5, tint: 'rgba(30,0,0,0.3)', cam: [0, 0, 1.05, 1.15, 680, 520],
+    setup: () => ({
+      s: newActor(820, -1, OPPONENTS[2], 'idleA', { forcePose: 'kneelDefeat', forceRate: 0.035 }),
+      k: newActor(520, 1, PLAYER_PROFILE, 'swordRest', { weapon: 'sword' }),
+    }),
+    draw(a) { drawActor(a.s); drawActor(a.k); },
+  },
+  { // 2. Faded memory of the burning village
+    bg: 2, dur: 5, fire: true, dim: 0.35, filter: 'sepia(0.85) blur(1.5px)', cam: [20, -20, 1.1, 1.15, 640, 520],
+    fires: [[260, GROUND, 170, 120], [640, GROUND, 190, 130], [1020, GROUND, 170, 120]],
+    draw(a, t) { drawBurning(this.fires, t, false); },
+  },
+  { // 3. Warm glowing image of Yuna smiling
+    bg: 0, dur: 6, motes: true, cam: [0, 0, 1.3, 1.45, 640, 520], tint: 'rgba(255,190,100,0.12)',
+    setup: () => ({ y: newActor(640, 1, YUNA_PROFILE, 'idleA', { forcePose: 'wave', forceRate: 0.04 }) }),
+    draw(a) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(640, 520, 10, 640, 520, 260);
+      g.addColorStop(0, 'rgba(255,220,150,0.55)'); g.addColorStop(1, 'rgba(255,180,90,0)');
+      ctx.fillStyle = g; ctx.fillRect(380, 260, 520, 520);
+      ctx.restore();
+      drawActor(a.y, { glow: '#ffd27a' });
+    },
+  },
+  { // 4. Kaito lays down his sword and looks to the rising sun
+    bg: 3, dur: 7, motes: true, cam: [0, 0, 1.1, 1.0, 640, 560],
+    setup: () => ({ k: newActor(520, 1, KAITO_WIND, 'kneel', { weapon: 'sword' }), placed: false }),
+    update(a, t) {
+      if (t > 2.2 && a.k.weapon) { a.k.weapon = null; a.placed = true; }
+      if (t > 3) { a.k.forcePose = 'lookUp'; a.k.forceRate = 0.04; }
+    },
+    draw(a) {
+      if (a.placed) {                                   // sword resting on the ground
+        ctx.strokeStyle = '#060304'; ctx.lineCap = 'round';
+        ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(590, GROUND - 3); ctx.lineTo(680, GROUND - 3); ctx.stroke();
+        ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(574, GROUND - 3); ctx.lineTo(590, GROUND - 3); ctx.stroke();
+        ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(590, GROUND - 10); ctx.lineTo(590, GROUND + 3); ctx.stroke();
+      }
+      drawActor(a.k);
+    },
+  },
+  { // 5. The lesson
+    bg: 3, dur: 9, cps: 30, dim: 0.3, motes: true, cam: [0, 0, 1.0, 1.04, 640, 560],
+    text: 'You cannot change the past. You cannot save everyone. But you can decide what your strength stands for.',
+    setup: () => ({ k: newActor(640, 1, KAITO_WIND, 'lookUp') }),
+    draw(a) { drawActor(a.k); },
+  },
+  { // 6. Title card
+    bg: 3, dur: 8, dim: 0.62, motes: true, cam: [0, 0, 1.0, 1.03, 640, 520],
+    overlay(t) {
+      const a1 = clamp((t - 0.5) / 1.5, 0, 1), a2 = clamp((t - 2.2) / 1.5, 0, 1);
+      const g = ctx.createLinearGradient(0, 250, 0, 330);
+      g.addColorStop(0, '#fff2b0'); g.addColorStop(1, '#e0a020');
+      bigText('THE LAST PROMISE', W / 2, 290, 96, g, 1 + (1 - a1) * 0.08, a1);
+      ctx.save(); ctx.globalAlpha = a2;
+      drawTyped('Some battles are fought for victory.', 999, W / 2, 380, 1100, 30, 'italic 26px Georgia, serif', '#f4ece0');
+      drawTyped("Others are fought for those we couldn't save.", 999, W / 2, 416, 1100, 30, 'italic 26px Georgia, serif', '#f4ece0');
+      ctx.restore();
+    },
+  },
+];
+
+function renderCutscene() {
+  if (!cs || cs.done) return;
+  const p = cs.panels[cs.i], t = cs.t;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // camera drift (eased over the panel)
+  const c = p.cam || [0, 0, 1, 1, W / 2, H / 2];
+  const k = Math.min(1, t / cs.dur), e = k * k * (3 - 2 * k);
+  const dx = c[0] + (c[1] - c[0]) * e, z = c[2] + (c[3] - c[2]) * e, fx = c[4], fy = c[5];
+  if (p.filter) ctx.filter = p.filter;
+  // background layer: slower parallax
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  const bz = 1.04 + (z - 1) * 0.4;
+  ctx.translate(fx, fy); ctx.scale(bz, bz); ctx.translate(-fx + dx * 0.3, -fy);
+  ctx.drawImage(bgCanvases[p.bg], 0, 0, W, H);
+  // world layer
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  if (p.tint) { ctx.fillStyle = p.tint; ctx.fillRect(0, 0, W, H); }
+  ctx.translate(fx, fy); ctx.scale(z, z); ctx.translate(-fx + dx, -fy);
+  if (p.draw) p.draw.call(p, cs.actors, t);
+  drawCsFx();
+  ctx.filter = 'none';
+  // screen-space overlays
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  if (p.dim) { ctx.fillStyle = `rgba(0,0,0,${p.dim})`; ctx.fillRect(0, 0, W, H); }
+  const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.95);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.65)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  if (p.overlay) p.overlay(t);
+  // cinematic letterbox
+  const bar = Math.min(1, sceneT * 2);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, 62 * bar);
+  ctx.fillRect(0, H - 118 * bar, W, 118 * bar);
+  if (p.text) drawTyped(p.text, (t - 0.5) * (p.cps || 28), W / 2, H - 60, 1180, 34, 'italic 29px Georgia, serif', '#f2e6d8');
+  // fades between panels
+  const fadeIn = Math.min(1, t / 0.7);
+  const fadeOut = cs.out !== null ? Math.max(0, cs.out / cs.outMax) : 1;
+  const alpha = fadeIn * fadeOut;
+  if (alpha < 1) { ctx.fillStyle = `rgba(0,0,0,${1 - alpha})`; ctx.fillRect(0, 0, W, H); }
+  text('ENTER / ESC  skip    ·    SPACE / CLICK  next', W - 20, 32, 14, 'rgba(255,255,255,0.45)', 'right');
+}
+
 function render() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (scene === 'battle') renderBattle();
+  else if (scene === 'cutscene') renderCutscene();
   else if (scene === 'menu') renderMenu();
   else if (scene === 'controls') renderControls();
   else if (scene === 'vs') renderVS();
@@ -2371,7 +2957,8 @@ function frame(now) {
     sceneT += dt;
     acc += dt;
     while (acc >= STEP && n++ < 5) { sceneStep(); acc -= STEP; }
-    if (scene === 'vs' && sceneT > 4.5) startMatch();
+    if (scene === 'cutscene') updateCutscene(dt);
+    if (scene === 'vs' && sceneT > 0.8) vsDlg.t += dt;
   }
   if (n >= 5) acc = 0;
   render();
