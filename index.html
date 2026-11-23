@@ -32,6 +32,8 @@ const WALK_FWD = 4.6, WALK_BACK = 3.6;
 const CHAIN_WINDOW = 14;          // frames into recovery where a combo follow-up is accepted
 const PERFECT_FRAMES = 9;         // 0.15s at 60fps
 const BLOCK_MULT = 0.2;           // blocking reduces damage by 80%
+const PRED_THRESHOLD = 0.5;       // adaptive AI only counters when prediction confidence >= this
+const PRED_MIN_N = 5;             // ...and the prediction is based on at least this many samples
 const FONT = '"Impact","Haettenschweiler","Arial Black",sans-serif';
 const BRUSH = '"Permanent Marker","Impact","Arial Black",sans-serif';
 
@@ -66,20 +68,20 @@ const PLAYER_PROFILE = {
 
 const OPPONENTS = [
   {
-    name: 'RONIN', tag: 'EASY', look: 'hat', bg: 0, hp: 100, dmgMult: 0.9, speed: 0.8, atkSpeed: 0.85,
+    name: 'RONIN', tag: 'EASY', learn: 0, look: 'hat', bg: 0, hp: 100, dmgMult: 0.9, speed: 0.8, atkSpeed: 0.85,
     size: 1, thick: 1, perfectChance: 0.05, energyMult: 0.8, eye: '#ff9a3c',
     taunt: 'My blade has rusted, but your end will not take long.',
     ai: { block: 0.12, react: [8, 14], combo: 0.08, kick: 0.35, cd: [70, 120], special: 0.02, specialRange: 260, jump: 0.002 },
   },
   {
-    name: 'VIPER', tag: 'MEDIUM', look: 'ponytail', bg: 1, hp: 100, dmgMult: 1, speed: 1.25, atkSpeed: 1.15,
+    name: 'VIPER', tag: 'MEDIUM', learn: 0.3, look: 'ponytail', bg: 1, hp: 100, dmgMult: 1, speed: 1.25, atkSpeed: 1.15,
     size: 1, thick: 0.82, perfectChance: 0.15, energyMult: 1, eye: '#c6ff6a',
     tail: { color: '#060304', n: 11, seg: 10, w0: 8, w1: 2.5, ax: -11, ay: -11, grav: 0.5, wind: 0.12 },
     taunt: 'You blink, you bleed. I strike twice before you breathe.',
     ai: { block: 0.25, react: [5, 11], combo: 0.4, kick: 0.6, cd: [36, 70], special: 0.06, specialRange: 300, jump: 0.006 },
   },
   {
-    name: 'SHOGUN', tag: 'FINAL BOSS', look: 'helmet', bg: 2, hp: 150, dmgMult: 1.3, speed: 1, atkSpeed: 1,
+    name: 'SHOGUN', tag: 'FINAL BOSS', learn: 1, look: 'helmet', bg: 2, hp: 150, dmgMult: 1.3, speed: 1, atkSpeed: 1,
     size: 1.15, thick: 1.3, perfectChance: 0.45, energyMult: 1.4, eye: '#ff2a2a',
     taunt: 'Kneel, shadow. The red moon has already chosen your grave.',
     ai: { block: 0.55, react: [2, 7], combo: 0.35, kick: 0.4, cd: [25, 55], special: 0.25, specialRange: 380, jump: 0.002 },
@@ -91,8 +93,9 @@ const OPPONENTS = [
    ========================================================================= */
 const SAVE_KEY = 'shadowDuel.save';
 function loadSave() {
-  try { return Object.assign({ best: -1, muted: false }, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); }
-  catch (e) { return { best: -1, muted: false }; }
+  const def = { best: -1, muted: false, vision: false, profile: null };
+  try { return Object.assign(def, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); }
+  catch (e) { return def; }
 }
 function writeSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* storage blocked */ } }
 const save = loadSave();   // best: highest opponent index reached (3 = beat the game)
@@ -491,7 +494,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const keys = {};
 const buf = {};   // frames left on a buffered press
 const KEY_FOR = { punch: 'KeyJ', kick: 'KeyK', special: 'KeyU' };
-const PREVENT = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyJ', 'KeyK', 'KeyL', 'KeyU', 'KeyP', 'KeyM',
+const PREVENT = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyJ', 'KeyK', 'KeyL', 'KeyU', 'KeyP', 'KeyM', 'KeyI',
   'Space', 'Enter', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 const isConfirm = c => c === 'Enter' || c === 'Space' || c === 'NumpadEnter';
 
@@ -502,6 +505,7 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   const c = e.code;
   if (c === 'KeyM') { toggleMute(); return; }
+  if (c === 'KeyI' && scene === 'battle') { save.vision = !save.vision; writeSave(); Sound.blip(); return; }
 
   const m = activeMenu();
   if (m) {
@@ -563,7 +567,7 @@ function playerInput() {
   };
 }
 function emptyInput() {
-  return { left: false, right: false, up: false, down: false, block: false, punch: false, kick: false, special: false, consume() {} };
+  return { left: false, right: false, up: false, down: false, block: false, punch: false, kick: false, special: false, uppercut: false, consume() {} };
 }
 
 /* =========================================================================
@@ -580,6 +584,7 @@ class Fighter {
       attack: null, hitstun: 0, blockstun: 0, blocking: false, crouching: false,
       ko: false, landedKO: false, launched: false, downT: 0, getupT: 0, fall: 0,
       combo: 0, blockStart: -99, prevBlock: false, forcePose: null,
+      jumpId: 0, onAct: null, blockHeld: false, prevCrouch: false, perfectBoost: 0, boostUntil: 0,
       walkPhase: 0, t: Math.random() * 100, ghosts: [], ghostTick: 0,
     });
     this.pose = POSES.idleA.slice();
@@ -604,7 +609,11 @@ class Fighter {
     this.attack = { type, t: 0, hit: false };
     inp.consume(key);
     Sound.whoosh(type === 'roundhouse' ? 1.5 : HEAVY[type] ? 1.15 : 0.8);
+    this.act(kindOf(type), type);
   }
+
+  // report a player action to the adaptive-AI tracker (only the player has onAct)
+  act(kind, type) { if (this.onAct) this.onAct(kind, type); }
 
   startSpecial(inp) {
     this.attack = { type: 'special', t: 0, hit: false };
@@ -613,6 +622,7 @@ class Fighter {
     game.superT = 0.75;
     game.superFocus = this;
     if (this.isPlayer) story.stats.specials++;
+    this.act('special', 'special');
     Sound.boom();
     popup(this, 'SHADOW STRIKE!', '#d6a6ff', 40);
     for (let i = 0; i < 18; i++) {
@@ -661,6 +671,7 @@ class Fighter {
     if (free) {
       if (inp.special && this.energy >= MAX_EN) this.startSpecial(inp);
       else if (inp.block && this.grounded) this.blocking = true;
+      else if (inp.uppercut) this.startAttack('uppercut', inp, 'punch');   // AI-only anti-air
       else if (inp.punch) this.startAttack('punch', inp, 'punch');
       else if (inp.kick) this.startAttack('kick', inp, 'kick');
       else if (this.grounded) {
@@ -671,11 +682,24 @@ class Fighter {
             this.vx += (dir * sp - this.vx) * 0.35;
             moving = true;
           }
-          if (inp.up) { this.vy = JUMP_V; this.grounded = false; this.vx = dir * 5.2 * this.speed; }
+          if (inp.up) {
+            this.vy = JUMP_V; this.grounded = false; this.vx = dir * 5.2 * this.speed;
+            this.jumpId++; this.act('jump', 'jump');
+          }
         }
       } else {
         this.vx = clamp(this.vx + dir * 0.15, -5.5, 5.5);   // light air control
       }
+    }
+
+    // player tracking: block start / block end / crouch start
+    if (this.onAct) {
+      const held = this.blocking && inp.block;
+      if (held && !this.blockHeld) this.act('block', 'block');
+      if (!held && this.blockHeld) playerBlockEnded();
+      this.blockHeld = held;
+      if (this.crouching && !this.prevCrouch) this.act('crouch', 'crouch');
+      this.prevCrouch = this.crouching;
     }
 
     let dashing = false;
@@ -851,16 +875,31 @@ function cloneSk(sk) {
    10. ENEMY AI  (state machine, tuned per opponent profile)
    ========================================================================= */
 class AI {
-  constructor(p) {
-    this.p = p;
+  constructor(p, learn = 0, name = 'AI') {
+    this.p = p; this.learn = learn; this.name = name;   // learn: 0 = fixed, 0.3 = light, 1 = strong
     this.state = 'approach'; this.timer = 0; this.cooldown = 60;
     this.blockT = 0; this.blockDelay = -1; this.seen = null; this.jumpCd = 120;
     this.queue = [];    // pending combo follow-ups
     this.wantDist = 90; // preferred attack distance
+    // adaptive state
+    this.pred = null; this.prevPred = null; this.armed = false;
+    this.weak = null; this.rangeTimer = 90;
+    this.expectKind = null; this.expectUntil = 0; this.aaJump = -1; this.whiffSeen = null; this.counters = 0;
+    this.strategy = learn > 0 ? 'Studying you...' : 'Baseline: fixed behavior, no learning';
+  }
+
+  // lower learning rate -> needs MORE confidence before trusting a prediction
+  get threshold() { return PRED_THRESHOLD + (1 - this.learn) * 0.15; }
+  isArmed(pr) { return !!pr && pr.conf >= this.threshold && pr.n >= PRED_MIN_N; }
+  expect(kind) { this.expectKind = kind; this.expectUntil = game.frame + 60; }   // to credit a successful counter
+  pickWantDist() {
+    let d = 70 + Math.random() * 50;
+    if (this.learn > 0 && this.weak) d += (RANGE_DIST[this.weak] - d) * this.learn;
+    this.wantDist = d;
   }
 
   think(me, pl) {
-    const P = this.p, inp = emptyInput();
+    const P = this.p, L = this.learn, N = this.name, inp = emptyInput();
     const dx = pl.x - me.x, dist = Math.abs(dx), to = Math.sign(dx) || 1;
     const go = d => { if (d > 0) inp.right = true; else if (d < 0) inp.left = true; };
     const atWall = me.x <= ARENA_L + 5 || me.x >= ARENA_R - 5;
@@ -868,12 +907,37 @@ class AI {
     this.cooldown--; this.timer--; this.jumpCd--;
     if (me.hitstun > 0 || me.downT > 0) this.queue = [];
 
-    // React to a new player attack: sometimes block (after a reaction delay)
+    // --- LEARNING 1: predict the player's next action with the n-gram model ---
+    this.prevPred = this.pred;                 // prediction made BEFORE the player's latest move
+    this.pred = model.predict();
+    const pr = this.pred;
+    this.armed = L > 0 && this.isArmed(pr);
+    const prevCode = L > 0 && this.isArmed(this.prevPred) ? this.prevPred.code : null;
+
+    // --- LEARNING 2: shift preferred distance to the player's weakest range ---
+    if (L > 0 && --this.rangeTimer <= 0) {
+      this.rangeTimer = 180;
+      const w = weakestRange();
+      if (w && w !== this.weak) {
+        this.weak = w; this.pickWantDist();
+        if (L >= 0.5) aiSay(`${N} is exploiting your weak range: ${w.toUpperCase()}`);
+      }
+    }
+
+    // React to a new player attack: block. If it was PREDICTED, block on time + perfect-block boost.
     if (pl.attack && pl.attack !== this.seen) {
       this.seen = pl.attack;
-      const chance = P.block * (lowHp ? 1.5 : 1);
-      if (dist < 190 && pl.attack.type !== 'special' && Math.random() < chance)
-        this.blockDelay = P.react[0] + (Math.random() * (P.react[1] - P.react[0]) | 0);
+      const kind = kindOf(pl.attack.type);
+      let chance = P.block * (lowHp ? 1.5 : 1), react = P.react;
+      if (prevCode === ACT_CODE[kind] && kind !== 'special' && Math.random() < L * 0.85) {
+        const remain = (ATTACKS[pl.attack.type].startup - pl.attack.t) / pl.atkSpeed;
+        chance = 1; react = [Math.max(0, remain - 7) | 0, Math.max(0, remain - 4) | 0];
+        me.perfectBoost = 0.75 * L; me.boostUntil = game.frame + 40;
+        this.expect(kind);
+        aiSay(`${N} read your ${LABEL[kind]}!`);
+      }
+      if (dist < 190 && kind !== 'special' && Math.random() < chance)
+        this.blockDelay = react[0] + (Math.random() * (react[1] - react[0] + 1) | 0);
     }
     if (this.blockDelay >= 0 && this.blockDelay-- === 0) this.blockT = 14 + (Math.random() * 14 | 0);
     if (this.blockT > 0 && !me.attack) { this.blockT--; inp.block = true; return inp; }
@@ -883,34 +947,81 @@ class AI {
       inp[this.queue.shift()] = true;
       return inp;
     }
-    if (me.attack || me.hitstun > 0 || me.downT > 0) return inp;
+    if (me.attack || me.hitstun > 0 || me.downT > 0 || me.getupT > 0) return inp;
     this.queue = [];
+
+    // Anti-air: uppercut a jumping player (very likely when the jump was predicted)
+    if (!pl.grounded && !pl.launched && !pl.ko && pl.jumpId !== this.aaJump && dist < 140 && pl.vy < 6) {
+      this.aaJump = pl.jumpId;
+      const predicted = prevCode === 'J' || (this.armed && pr.code === 'J');
+      const jumpShare = fightStats.actions >= 6 ? fightStats.counts.jump / fightStats.actions : 0;  // learned habit
+      if (Math.random() < (predicted ? 0.2 + L * 0.7 : 0.04 + L * (0.1 + 0.6 * jumpShare))) {
+        inp.uppercut = true; this.expect('jump');
+        if (predicted) aiSay(`${N} predicted your JUMP!`);
+        this.strategy = 'Anti-air uppercut!';
+        return inp;
+      }
+    }
+    // Whiff punish: the player's punch missed -> step in with a kick
+    if (L > 0 && pl.attack && pl.attack !== this.whiffSeen && kindOf(pl.attack.type) === 'punch'
+        && pl.attackPhase === 'recovery' && !pl.attack.hit && dist < 175) {
+      this.whiffSeen = pl.attack;
+      if (Math.random() < (this.state === 'bait' ? 0.45 + L * 0.5 : L * 0.3)) {
+        inp.kick = true; this.expect('punch');
+        this.strategy = 'Punishing your missed punch!';
+        return inp;
+      }
+    }
 
     // Shadow Strike when the bar is full
     if (me.energy >= MAX_EN && dist < P.specialRange && !pl.invulnerable && Math.random() < P.special) { inp.special = true; return inp; }
 
+    // Prediction-driven positioning (only when confident, and random so it stays beatable)
+    if (this.armed && !lowHp && Math.random() < L * 0.04) {
+      if (pr.code === 'P' && dist < 140 && this.state !== 'bait') { this.state = 'bait'; this.timer = 35; aiSay(`${N} predicts your PUNCH...`); }
+      else if (pr.code === 'K' && dist < 200 && this.state !== 'guard') { this.state = 'guard'; this.timer = 40; aiSay(`${N} predicts your KICK...`); }
+      else if (pr.code === 'J' && dist < 230 && this.state !== 'aa') { this.state = 'aa'; this.timer = 45; aiSay(`${N} predicts your jump...`); }
+    }
+
     if (this.timer <= 0) this.pickState(me, dist, lowHp);
+    const rangeTxt = L > 0 && this.weak ? ` · targeting your weak ${this.weak.toUpperCase()} range` : '';
 
     switch (this.state) {
       case 'approach':
-        go(to);
-        if (dist < 125) { this.state = 'attack'; this.timer = 40; }
+        go(to); this.strategy = 'Closing in' + rangeTxt;
+        if (dist < this.wantDist + 10) { this.state = 'attack'; this.timer = 40; }
         break;
       case 'space':
-        go(-to);
+        go(-to); this.strategy = 'Repositioning';
         if (atWall) this.state = 'attack';
         break;
       case 'retreat':
+        this.strategy = 'Retreating (low HP)';
         if (dist < 260) go(-to);
         if (atWall || (dist < 100 && Math.random() < 0.04)) { this.state = 'attack'; this.timer = 30; }
         break;
       case 'wait':
+        this.strategy = L > 0 ? 'Watching and learning' : 'Waiting';
+        break;
+      case 'bait':      // predicted punch spam: step out of punch range, then whiff-punish
+        this.strategy = 'Baiting your punch out of range, then counter';
+        if (dist < 150) go(-to);
+        break;
+      case 'guard':     // predicted kick: hold position, ready to perfect-block
+        this.strategy = 'Ready to perfect-block your KICK';
+        if (dist < 90) go(-to);
+        break;
+      case 'aa':        // predicted jump: stay close, ready to uppercut
+        this.strategy = 'Anti-air ready: waiting for your jump';
+        if (dist > 170) go(to);
         break;
       case 'attack':
+        this.strategy = 'Attacking' + rangeTxt;
         if (dist > this.wantDist) go(to);
+        else if (L >= 0.5 && dist < this.wantDist - 40) go(-to);
         else if (this.cooldown <= 0 && !pl.invulnerable) {
           this.cooldown = P.cd[0] + Math.random() * (P.cd[1] - P.cd[0]);
-          this.wantDist = 70 + Math.random() * 50;   // next time, maybe step in closer
+          this.pickWantDist();
           if (dist < 100 && Math.random() < P.combo) {
             inp.punch = true;
             this.queue = Math.random() < 0.65 ? ['punch', 'punch'] : ['kick'];
@@ -985,11 +1096,12 @@ function checkHit(a, b) {
   const dmg = d.dmg * a.dmgMult;
   const fromFront = Math.sign(a.x - b.x) === b.facing || a.x === b.x;
   const blocked = !d.unblockable && b.blocking && b.grounded && fromFront;
-  const st = story.stats;
+  const st = story.stats, fs = fightStats, rng = rangeOf(Math.abs(a.x - b.x));
 
   if (blocked) {
     a.combo = 0;
-    const perfect = game.frame - b.blockStart <= PERFECT_FRAMES && Math.random() < b.perfectChance;
+    const boost = game.frame < b.boostUntil ? b.perfectBoost : 0;   // adaptive AI predicted this attack
+    const perfect = game.frame - b.blockStart <= PERFECT_FRAMES && Math.random() < b.perfectChance + boost;
     if (perfect) {
       // Perfect block: no damage, attacker is stunned
       a.attack = null; a.hitstun = 32; a.vx = -a.facing * 4;
@@ -1000,10 +1112,12 @@ function checkHit(a, b) {
       game.hitstop = 9; game.shake = 5;
       Sound.ding();
       if (b.isPlayer) st.perfects++;
+      if (b === enemy) creditCounter();
       return;
     }
     b.hp -= dmg * BLOCK_MULT;
-    if (b.isPlayer) st.dmgTaken += dmg * BLOCK_MULT;
+    if (b.isPlayer) { st.dmgTaken += dmg * BLOCK_MULT; fs.perf[rng].t += dmg * BLOCK_MULT; }
+    if (a.isPlayer) fs.perf[rng].d += dmg * BLOCK_MULT;
     b.blockstun = Math.round(d.stun * 0.6);
     b.vx = a.facing * 3.5;          // slight push back
     a.vx = -a.facing * 1.5;
@@ -1030,8 +1144,9 @@ function checkHit(a, b) {
     if (HEAVY[type]) Sound.heavy(); else Sound.thud();
     if (a.combo >= 2) popup(a, a.combo + ' HIT COMBO!', '#ffd27a');
     if (type === 'special') { a.attack.t = d.startup + d.active; a.vx = a.facing * 2; }
-    if (a.isPlayer) { st.hits++; st.dmgDealt += dmg; st.maxCombo = Math.max(st.maxCombo, a.combo); }
-    if (b.isPlayer) st.dmgTaken += dmg;
+    if (a.isPlayer) { st.hits++; st.dmgDealt += dmg; st.maxCombo = Math.max(st.maxCombo, a.combo); fs.perf[rng].d += dmg; }
+    if (b.isPlayer) { st.dmgTaken += dmg; fs.perf[rng].t += dmg; }
+    if (a === enemy) creditCounter();
   }
   b.trailDelay = 35;
 
@@ -1080,6 +1195,207 @@ function updateEmbers() {
 }
 
 /* =========================================================================
+   11b. ADAPTIVE AI — PLAYER MODEL (n-gram / Markov chain), TRACKING & ANALYSIS
+   Every player action is encoded as a letter (P K J B C S). The model counts
+   "context -> next action" for contexts of the last 0..3 actions and predicts
+   with back-off (longest context that has enough samples wins).
+   ========================================================================= */
+const ACTIONS = ['punch', 'kick', 'jump', 'block', 'crouch', 'special'];
+const ACT_CODE = { punch: 'P', kick: 'K', jump: 'J', block: 'B', crouch: 'C', special: 'S' };
+const CODE_ACT = { P: 'punch', K: 'kick', J: 'jump', B: 'block', C: 'crouch', S: 'special' };
+const LABEL = { punch: 'PUNCH', kick: 'KICK', jump: 'JUMP', block: 'BLOCK', crouch: 'CROUCH', special: 'SHADOW STRIKE' };
+const PLURAL = { punch: 'PUNCHES', kick: 'KICKS', jump: 'JUMPING', block: 'BLOCKING', crouch: 'CROUCHING', special: 'SHADOW STRIKES' };
+const RANGES = ['close', 'mid', 'far'];
+const RANGE_DIST = { close: 80, mid: 120, far: 160 };        // AI preferred distance per range
+const kindOf = t => (t === 'kick' || t === 'roundhouse') ? 'kick' : t === 'special' ? 'special' : 'punch';
+const rangeOf = d => d < 110 ? 'close' : d < 200 ? 'mid' : 'far';
+const argmax = o => Object.keys(o).reduce((a, b) => (o[b] > o[a] ? b : a));
+const sumObj = o => Object.values(o).reduce((a, b) => a + b, 0);
+const pct = v => Math.round(v * 100) + '%';
+const zeroCounts = () => ({ punch: 0, kick: 0, jump: 0, block: 0, crouch: 0, special: 0 });
+const newPerf = () => ({ close: { d: 0, t: 0 }, mid: { d: 0, t: 0 }, far: { d: 0, t: 0 } });
+
+class PlayerModel {
+  constructor(saved) {
+    this.ngram = (saved && saved.ngram) || [{}, {}, {}, {}];   // order k: context string -> {next: count}
+    const life = (saved && saved.life) || {};
+    this.life = { fights: life.fights || 0, counts: Object.assign(zeroCounts(), life.counts), perf: life.perf || newPerf() };
+    this.history = [];
+  }
+  // older fights fade out so the profile follows the player's CURRENT style
+  decay(f) {
+    for (const tbl of this.ngram) for (const ctx in tbl) {
+      const t = tbl[ctx];
+      for (const a in t) { t[a] *= f; if (t[a] < 0.2) delete t[a]; }
+      if (!Object.keys(t).length) delete tbl[ctx];
+    }
+    for (const r of RANGES) { this.life.perf[r].d *= f; this.life.perf[r].t *= f; }
+  }
+  record(code) {
+    const h = this.history;
+    for (let k = 0; k <= Math.min(3, h.length); k++) {
+      const ctx = h.slice(h.length - k).join('');
+      const t = this.ngram[k][ctx] || (this.ngram[k][ctx] = {});
+      t[code] = (t[code] || 0) + 1;
+    }
+    h.push(code);
+    if (h.length > 12) h.shift();
+  }
+  predict() {
+    const h = this.history;
+    for (let k = Math.min(3, h.length); k >= 0; k--) {
+      const t = this.ngram[k][h.slice(h.length - k).join('')];
+      if (!t) continue;
+      const n = sumObj(t);
+      if (n < (k ? 3 : 4)) continue;                  // not enough data for this context: back off
+      const code = argmax(t);
+      return { code, conf: t[code] / (n + 1.5), n, order: k };   // +1.5 = small-sample penalty
+    }
+    return null;
+  }
+  toJSON() { return { ngram: this.ngram, life: this.life }; }
+}
+
+function newFightStats() {
+  return {
+    counts: zeroCounts(), actions: 0, combos: { JJJ: 0, JK: 0 }, dist: { close: 0, mid: 0, far: 0 },
+    perf: newPerf(), blockEnds: 0, blockFollows: 0, lastBlockEnd: -999,
+    specialReady: 0, specialUsed: 0, wasFull: false,
+    predTotal: 0, predCorrect: 0, punished: {}, announced: {},
+  };
+}
+
+let model = new PlayerModel(save.profile);
+let fightStats = newFightStats();
+let aiMsg = null;                   // { text, life } glowing "AI learned..." message
+
+function saveProfile() { save.profile = model.toJSON(); writeSave(); }
+
+// Called by the player Fighter whenever it starts an action
+function playerActed(kind, type) {
+  const fs = fightStats, code = ACT_CODE[kind];
+  const pr = model.predict();                       // what did the model expect BEFORE this move?
+  if (pr && pr.n >= PRED_MIN_N) { fs.predTotal++; if (pr.code === code) fs.predCorrect++; }
+  fs.counts[kind]++; fs.actions++;
+  if (type === 'uppercut') fs.combos.JJJ++;
+  if (type === 'roundhouse') fs.combos.JK++;
+  if (kind === 'punch' || kind === 'kick' || kind === 'special') {
+    fs.dist[rangeOf(Math.abs(player.x - enemy.x))]++;
+    if (game.frame - fs.lastBlockEnd < 25) { fs.blockFollows++; fs.lastBlockEnd = -999; }
+  }
+  if (kind === 'special') fs.specialUsed++;
+  model.record(code);
+  checkLearned();
+}
+
+function playerBlockEnded() { fightStats.blockEnds++; fightStats.lastBlockEnd = game.frame; }
+
+// Credit the AI when a predicted/planned counter actually lands
+function creditCounter() {
+  if (!ai || !ai.expectKind || game.frame > ai.expectUntil) return;
+  ai.counters++;
+  fightStats.punished[ai.expectKind] = (fightStats.punished[ai.expectKind] || 0) + 1;
+  ai.expectKind = null;
+}
+
+// Range where the player loses the most (damage taken - damage dealt), this fight + memory
+function weakestRange() {
+  let best = null, bestScore = -Infinity;
+  for (const r of RANGES) {
+    const f = fightStats.perf[r], l = model.life.perf[r];
+    const d = f.d + l.d * 0.5, t = f.t + l.t * 0.5;
+    if (d + t < 12) continue;
+    if (t - d > bestScore) { bestScore = t - d; best = r; }
+  }
+  return best;
+}
+
+// Glowing message; max one every ~6 seconds; adaptive opponents only
+function aiSay(text, force) {
+  if (!ai || ai.learn <= 0 || game.state !== 'fight') return false;
+  if (!force && game.aiClock - game.lastMsg < 6) return false;
+  aiMsg = { text, life: 0 };
+  game.lastMsg = game.aiClock;
+  return true;
+}
+
+// Announce tendencies the AI has picked up (each once per fight)
+function checkLearned() {
+  if (!ai || ai.learn <= 0) return;
+  const fs = fightStats, ann = fs.announced, N = enemy.name;
+  const once = (key, cond, txt) => { if (!ann[key] && cond && aiSay(txt)) ann[key] = 1; };
+  if (fs.actions >= 10) {
+    const fav = argmax(fs.counts);
+    once('fav', fs.counts[fav] / fs.actions >= 0.4, `${N} has learned: you favor ${PLURAL[fav]}`);
+  }
+  const dTot = sumObj(fs.dist);
+  if (dTot >= 8) { const r = argmax(fs.dist); once('dist', fs.dist[r] / dTot >= 0.6, `${N} has learned: you like ${r.toUpperCase()} range`); }
+  once('follow', fs.blockEnds >= 4 && fs.blockFollows / fs.blockEnds >= 0.6, `${N} has learned: you strike right after blocking`);
+  once('jjj', fs.combos.JJJ >= 2, `${N} has learned your J J J combo`);
+  once('jk', fs.combos.JK >= 2, `${N} has learned your J K roundhouse`);
+  once('confused', fs.predTotal >= 15 && fs.predCorrect / fs.predTotal < 0.3, `${N} can't read you, keep mixing it up!`);
+}
+
+// Post-fight BATTLE ANALYSIS: style label, top tendencies, one tip
+function analyzeFight() {
+  const fs = fightStats, c = fs.counts, n = Math.max(1, fs.actions);
+  const sh = k => c[k] / n;
+  const atk = c.punch + c.kick + c.special;
+  const core = ['punch', 'kick', 'jump', 'block', 'crouch'];
+  const cn = core.reduce((s, k) => s + c[k], 0) || 1;
+  let ent = 0;                                       // normalized entropy = how varied the player is
+  for (const k of core) { const p = c[k] / cn; if (p > 0) ent -= p * Math.log(p); }
+  ent /= Math.log(core.length);
+  const follow = fs.blockEnds ? fs.blockFollows / fs.blockEnds : 0;
+  const readRate = fs.predTotal ? fs.predCorrect / fs.predTotal : 0;
+
+  let label;
+  if (fs.actions < 8) label = 'Cautious Observer';
+  else if (ent >= 0.86) label = 'Balanced Master';
+  else if (sh('jump') >= 0.22) label = 'Aerial Fighter';
+  else if (sh('block') + sh('crouch') >= 0.38) label = follow >= 0.4 ? 'Defensive Counter-Puncher' : 'Patient Defender';
+  else if (fs.combos.JJJ + fs.combos.JK >= 4) label = 'Combo Artist';
+  else if (atk && c.kick / atk >= 0.55) label = 'Aggressive Kicker';
+  else if (atk && c.punch / atk >= 0.6) label = 'Relentless Puncher';
+  else label = 'Balanced Fighter';
+
+  const T = [];
+  if (fs.actions) { const fav = argmax(c); T.push([sh(fav), `${pct(sh(fav))} of your moves were ${PLURAL[fav].toLowerCase()}`]); }
+  const dTot = sumObj(fs.dist);
+  if (dTot >= 4) { const r = argmax(fs.dist); T.push([fs.dist[r] / dTot * 0.9, `You attacked from ${r.toUpperCase()} range ${pct(fs.dist[r] / dTot)} of the time`]); }
+  if (fs.blockEnds >= 3) T.push([follow * 0.85, `You struck right after blocking ${pct(follow)} of the time`]);
+  if (fs.combos.JJJ) T.push([Math.min(1, fs.combos.JJJ / 3) * 0.8, `You used the J J J uppercut combo ${fs.combos.JJJ} times`]);
+  if (fs.combos.JK) T.push([Math.min(1, fs.combos.JK / 3) * 0.8, `You used the J K roundhouse ${fs.combos.JK} times`]);
+  if (c.jump >= 3) T.push([sh('jump') * 1.6, `You jumped ${c.jump} times`]);
+  if (fs.specialReady) T.push([fs.specialUsed < fs.specialReady ? 0.6 : 0.4, `You used Shadow Strike ${fs.specialUsed} of ${fs.specialReady} times it was ready`]);
+  if (fs.predTotal >= 8) T.push([readRate * 0.9, `The AI predicted your next move ${pct(readRate)} of the time`]);
+  const weak = weakestRange();
+  if (weak) T.push([0.45, `Your weakest range: ${weak.toUpperCase()}`]);
+  T.sort((a, b) => b[0] - a[0]);
+
+  const N = enemy.name;
+  const punTotal = sumObj(fs.punished);
+  const ALT = { kick: 'Mix in more blocks', punch: 'Mix in kicks and blocks', jump: 'Stay grounded more',
+    special: 'Bait it out first', block: 'Attack more', crouch: 'Stand and fight more' };
+  let tip;
+  if (punTotal >= 2 && fs.punished[argmax(fs.punished)] >= 2) { const m = argmax(fs.punished); tip =`${ALT[m]}: ${N} punished your predictable ${PLURAL[m].toLowerCase()} ${fs.punished[m]} times`; }
+  else if (fs.predTotal >= 8 && readRate >= 0.5) tip = `Vary your moves: the AI could predict you ${pct(readRate)} of the time`;
+  else if (fs.actions >= 8 && sh('block') < 0.08) tip = 'Mix in more blocks: tap L just before a hit for a PERFECT BLOCK';
+  else if (fs.specialReady > fs.specialUsed) tip = `Use Shadow Strike when the bar is full: you held it ${fs.specialReady - fs.specialUsed} times`;
+  else if (!fs.combos.JJJ && !fs.combos.JK) tip = 'Try the J J J combo: the final uppercut launches the enemy';
+  else tip = 'Great variety: keep the AI guessing!';
+  return { label, tendencies: T.slice(0, 3).map(t => t[1]), tip, readRate, predTotal: fs.predTotal };
+}
+
+function finalizeMatch() {
+  game.analysis = analyzeFight();
+  model.life.fights++;
+  for (const k of ACTIONS) model.life.counts[k] += fightStats.counts[k];
+  for (const r of RANGES) { model.life.perf[r].d += fightStats.perf[r].d; model.life.perf[r].t += fightStats.perf[r].t; }
+  saveProfile();
+}
+
+/* =========================================================================
    12. SCENES & GAME FLOW
    scenes: menu -> controls | vs -> battle (intro/fight/ko/end, pause) -> vs ... -> victory
    ========================================================================= */
@@ -1091,6 +1407,7 @@ const game = {
   state: 'intro', t: 0, timeScale: 1, timer: ROUND_TIME, hitstop: 0, shake: 0, frame: 0,
   banner: '', result: '', roundLabel: '', round: 1, wins: [0, 0], matchOver: false,
   superT: 0, superFocus: null, koSlow: 0, popups: [], roundWinner: null, gonged: false,
+  aiClock: 0, lastMsg: -99, analysis: null,
 };
 const cam = { x: W / 2, z: 1 };
 let player, enemy, ai;
@@ -1152,6 +1469,11 @@ function startMatch() {
   scene = 'battle'; paused = false;
   game.round = 1; game.wins = [0, 0]; game.matchOver = false;
   menus.lose.sel = 0;
+  // adaptive AI: fresh per-fight stats; long-term profile fades a bit so it tracks your current style
+  fightStats = newFightStats();
+  model.decay(0.8);
+  model.history = [];
+  game.aiClock = 0; game.lastMsg = -99; game.analysis = null; aiMsg = null;
   startRound();
 }
 
@@ -1173,7 +1495,8 @@ function startRound() {
   const opp = currentOpp();
   player = new Fighter(400, 1, 'YOU', true);
   enemy = new Fighter(880, -1, opp.name, false, opp);
-  ai = new AI(opp.ai);
+  player.onAct = playerActed;                  // feed the adaptive-AI tracker
+  ai = new AI(opp.ai, opp.learn, opp.name);
   particles = [];
   for (const k in buf) buf[k] = 0;
   const final = game.round >= 3 || (game.wins[0] === 1 && game.wins[1] === 1);
@@ -1194,6 +1517,7 @@ function endRound(winner, banner) {
     : winner === player ? 'ROUND TO YOU' : winner === enemy ? 'ROUND TO ' + enemy.name : 'DRAW';
   Object.assign(game, { state: 'ko', t: 0, banner });
   Sound.gong();
+  saveProfile();
 }
 
 function onKO(winner) { endRound(winner, 'K.O.'); game.koSlow = 1; }   // 1s of slow motion
@@ -1213,16 +1537,22 @@ function realUpdate(dt) {
 
   for (const p of game.popups) { p.life += dt; p.y -= dt * 22; }
   game.popups = game.popups.filter(p => p.life < p.max);
+  game.aiClock += dt;
+  if (aiMsg) { aiMsg.life += dt; if (aiMsg.life > 3.3) aiMsg = null; }
 
   if (game.state === 'intro') {
     if (game.t > 0.9 && !game.gonged) { game.gonged = true; Sound.gong(); }
-    if (game.t > 1.8) { game.state = 'fight'; game.t = 0; }
+    if (game.t > 1.8) {
+      game.state = 'fight'; game.t = 0;
+      if (game.round === 1 && model.life.fights > 0)
+        aiSay(`${enemy.name} remembers your style from ${model.life.fights} past fight${model.life.fights > 1 ? 's' : ''}`, true);
+    }
   }
   if (game.state === 'ko') {
     const w = game.roundWinner;
     if (w && !w.ko && game.t > 1.2) w.forcePose = 'victory';
     if (game.t > 3.0) {
-      if (game.matchOver) { game.state = 'end'; game.t = 0; }
+      if (game.matchOver) { game.state = 'end'; game.t = 0; finalizeMatch(); }
       else { game.round++; startRound(); }
     }
   }
@@ -1264,6 +1594,9 @@ function step() {
   separate(player, enemy);
 
   if (fighting) {
+    const full = player.energy >= MAX_EN;      // track how often Shadow Strike was available
+    if (full && !fightStats.wasFull) fightStats.specialReady++;
+    fightStats.wasFull = full;
     checkHit(player, enemy);
     if (game.state === 'fight') checkHit(enemy, player);
     if (game.state === 'fight') {
@@ -1502,9 +1835,11 @@ function drawEmbers(v) {
 }
 
 // Brush-stroke style buttons; stores rects for mouse hit-testing
-function drawMenuButtons(m, cx, y0, gap, w = 320, h = 58) {
+function drawMenuButtons(m, cx0, y0, gap, w = 320, h = 58, horiz = false) {
   m.items.forEach((it, i) => {
-    const y = y0 + i * gap, sel = i === m.sel;
+    const sel = i === m.sel;
+    const cx = horiz ? cx0 + (i - (m.items.length - 1) / 2) * gap : cx0;
+    const y = horiz ? y0 : y0 + i * gap;
     it.rect = { x: cx - w / 2 - 10, y: y - h / 2, w: w + 20, h };
     ctx.save();
     ctx.translate(cx, y);
@@ -1655,30 +1990,159 @@ function drawBattleOverlay() {
     if (t < 0.9) bigText(game.roundLabel, W / 2, H / 2 - 60, 96, '#f4e6c8', 1 + Math.max(0, 0.25 - t) * 2);
     else bigText('FIGHT!', W / 2, H / 2 - 60, 140, '#ff4b2b', 1 + Math.max(0, 1.15 - t) * 2, Math.min(1, (1.8 - t) * 4));
   }
-  if (game.state === 'ko' || game.state === 'end') {
-    const sc = game.state === 'ko' ? 1 + Math.max(0, 0.3 - t) * 4 : 1;
-    const g = ctx.createLinearGradient(0, H / 2 - 160, 0, H / 2);
+  const res = game.result;
+  const resCol = (res === 'YOU WIN' || res === 'ROUND TO YOU') ? '#ffe9a8' : res === 'DRAW' ? '#f4e6c8' : '#ff5a3c';
+  const bannerGrad = (y0, y1) => {
+    const g = ctx.createLinearGradient(0, y0, 0, y1);
     g.addColorStop(0, '#ffd27a'); g.addColorStop(1, '#d4161c');
-    bigText(game.banner, W / 2, H / 2 - 100, game.banner === 'K.O.' ? 170 : 120, g, sc);
-  }
-  if ((game.state === 'ko' && t > 1.3) || game.state === 'end') {
-    const res = game.result;
-    const good = res === 'YOU WIN' || res === 'ROUND TO YOU';
-    const col = good ? '#ffe9a8' : res === 'DRAW' ? '#f4e6c8' : '#ff5a3c';
-    const tt = game.state === 'end' ? t : t - 1.3;
-    bigText(res, W / 2, H / 2 + 40, game.matchOver ? 84 : 60, col, 1 + Math.max(0, 0.2 - tt) * 3, 1, FONT);
+    return g;
+  };
+  if (game.state === 'ko') {
+    const sc = 1 + Math.max(0, 0.3 - t) * 4;
+    bigText(game.banner, W / 2, H / 2 - 100, game.banner === 'K.O.' ? 170 : 120, bannerGrad(H / 2 - 160, H / 2), sc);
+    if (t > 1.3) bigText(res, W / 2, H / 2 + 40, game.matchOver ? 84 : 60, resCol, 1 + Math.max(0, 1.5 - t) * 3, 1, FONT);
   }
   if (game.state === 'end') {
+    // compact header + BATTLE ANALYSIS panel
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0, 0, W, H);
+    bigText(game.banner, W / 2, 88, 80, bannerGrad(50, 125));
+    bigText(res, W / 2, 162, 56, resCol, 1 + Math.max(0, 0.2 - t) * 3, 1, FONT);
+    if (game.analysis) drawAnalysis(game.analysis, 250, 200, 780, 395, t);
     if (playerWonMatch()) {
       if (t > 0.6) {
         const last = story.stage >= OPPONENTS.length - 1;
-        bigText(last ? 'Press ENTER' : 'Press ENTER to face the next opponent', W / 2, H / 2 + 130, 30, '#f4e6c8', 1, 0.6 + 0.4 * Math.sin(t * 5), FONT);
+        bigText(last ? 'Press ENTER' : 'Press ENTER to face the next opponent', W / 2, 648, 28, '#f4e6c8', 1, 0.6 + 0.4 * Math.sin(t * 5), FONT);
       }
-    } else if (t > 0.8) drawMenuButtons(menus.lose, W / 2, H / 2 + 130, 70, 280, 54);
+    } else if (t > 0.8) drawMenuButtons(menus.lose, W / 2, 648, 310, 260, 50, true);
   }
   if (game.state === 'intro' || game.state === 'fight') {
-    text('P / Esc  pause', 20 + 50, H - 18, 15, 'rgba(244,230,200,0.45)');
+    text('P / Esc  pause   ·   I  AI vision', 22, H - 18, 15, 'rgba(244,230,200,0.5)', 'left');
   }
+}
+
+function wrapText(str, x, y, maxW, lh, size, color, font = FONT) {
+  ctx.font = `${size}px ${font}`;
+  let line = '';
+  for (const w of str.split(' ')) {
+    const test = line ? line + ' ' + w : w;
+    if (ctx.measureText(test).width > maxW && line) { text(line, x, y, size, color, 'left', font); y += lh; line = w; }
+    else line = test;
+  }
+  if (line) text(line, x, y, size, color, 'left', font);
+  return y;
+}
+
+function drawAnalysis(an, x, y, w, h, t) {
+  const a = Math.min(1, t * 3);
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(10,4,20,0.86)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = '#8a6cc8'; ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+  ctx.shadowColor = '#b14cff'; ctx.shadowBlur = 12;
+  text('BATTLE ANALYSIS', x + 24, y + 32, 30, '#e9d5ff', 'left', BRUSH);
+  ctx.shadowBlur = 0;
+  // how predictable was the player?
+  if (an.predTotal >= 5) {
+    text('AI READ YOUR NEXT MOVE', x + w - 24, y + 22, 13, '#b9a3e0', 'right');
+    const bw = 200, bx = x + w - 24 - bw;
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(bx, y + 34, bw, 10);
+    ctx.fillStyle = an.readRate >= 0.5 ? '#ff6a5a' : '#6fe0a0'; ctx.fillRect(bx, y + 34, bw * an.readRate, 10);
+    text(pct(an.readRate), bx - 8, y + 40, 16, '#ffffff', 'right');
+  }
+  text('FIGHTING STYLE', x + 24, y + 74, 14, '#b9a3e0', 'left');
+  text(an.label, x + 24, y + 106, 38, '#ffffff', 'left', BRUSH);
+  text('TOP TENDENCIES', x + 24, y + 150, 14, '#b9a3e0', 'left');
+  an.tendencies.forEach((s, i) => text('▸  ' + s, x + 34, y + 180 + i * 30, 20, '#f4e6c8', 'left'));
+  if (!an.tendencies.length) text('Not enough data: try more moves next time', x + 34, y + 180, 20, '#f4e6c8', 'left');
+  text('TIP', x + 24, y + 282, 14, '#b9a3e0', 'left');
+  wrapText(an.tip, x + 24, y + 310, w - 48, 26, 21, '#d6a6ff');
+  text(`Player profile saved  ·  ${model.life.fights} fight${model.life.fights === 1 ? '' : 's'} analysed`, x + w - 16, y + h - 14, 13, 'rgba(200,190,230,0.6)', 'right');
+  ctx.restore();
+}
+
+// Glowing "AI has learned..." message near the top
+function drawAiMsg() {
+  if (!aiMsg) return;
+  const t = aiMsg.life;
+  const a = t < 0.25 ? t / 0.25 : t > 2.8 ? Math.max(0, (3.3 - t) / 0.5) : 1;
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.font = `24px ${FONT}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const s = '◈  ' + aiMsg.text + '  ◈';
+  ctx.lineWidth = 6; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+  ctx.strokeText(s, W / 2, 150);
+  ctx.shadowColor = '#b14cff'; ctx.shadowBlur = 20;
+  ctx.fillStyle = '#ecdcff';
+  ctx.fillText(s, W / 2, 150);
+  ctx.restore();
+}
+
+// "AI VISION" debug overlay (toggle with I)
+function drawVision() {
+  const x = W - 352, y = 128, w = 332, h = 412, L = ai.learn, fs = fightStats, thr = ai.threshold;
+  ctx.save();
+  ctx.fillStyle = 'rgba(4,6,20,0.74)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = 'rgba(120,220,255,0.6)'; ctx.lineWidth = 1.5;
+  ctx.strokeRect(x, y, w, h);
+  ctx.shadowColor = '#4fd8ff'; ctx.shadowBlur = 10;
+  text('AI VISION', x + 14, y + 18, 20, '#8ff0ff', 'left');
+  ctx.shadowBlur = 0;
+  text('[I] hide', x + w - 12, y + 18, 12, 'rgba(200,230,255,0.6)', 'right');
+  text(enemy.name + (L > 0 ? `  ·  learning rate ${pct(L)}` : '  ·  BASELINE (does not adapt)'), x + 14, y + 40, 13, L > 0 ? '#d6a6ff' : '#b0b0b0', 'left');
+
+  text('PLAYER ACTIONS (this fight)', x + 14, y + 62, 12, '#9fb2ff', 'left');
+  const n = Math.max(1, fs.actions), top = fs.actions ? argmax(fs.counts) : null;
+  ACTIONS.forEach((a, i) => {
+    const yy = y + 80 + i * 18, v = fs.counts[a] / n;
+    text(a === 'special' ? 'SPECIAL' : LABEL[a], x + 14, yy, 12, '#e8e0ff', 'left');
+    ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(x + 90, yy - 6, 180, 11);
+    ctx.fillStyle = a === top ? '#ff8a5a' : '#6fb6ff'; ctx.fillRect(x + 90, yy - 6, 180 * v, 11);
+    text(pct(v), x + w - 14, yy, 12, '#e8e0ff', 'right');
+  });
+  let yy = y + 196;
+  text('LAST MOVES:  ' + (model.history.slice(-6).join(' ') || '-'), x + 14, yy, 13, '#e8e0ff', 'left');
+  text('P K J B C S', x + w - 14, yy, 10, 'rgba(200,210,255,0.45)', 'right');
+
+  yy += 24;
+  text('PREDICTED NEXT MOVE (n-gram)', x + 14, yy, 12, '#9fb2ff', 'left');
+  yy += 20;
+  const pr = ai.pred;
+  if (pr) {
+    const hot = pr.conf >= thr && pr.n >= PRED_MIN_N;
+    text(LABEL[CODE_ACT[pr.code]], x + 14, yy, 19, '#ffffff', 'left');
+    text(pct(pr.conf), x + w - 14, yy, 19, hot ? '#ff6a5a' : '#ffffff', 'right');
+    yy += 16;
+    ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(x + 14, yy - 4, w - 28, 8);
+    ctx.fillStyle = hot ? '#ff5a4a' : '#8ff0ff'; ctx.fillRect(x + 14, yy - 4, (w - 28) * Math.min(1, pr.conf), 8);
+    ctx.fillStyle = '#ffd27a'; ctx.fillRect(x + 14 + (w - 28) * thr - 1, yy - 8, 2, 16);
+    yy += 17;
+    const status = L <= 0 ? 'prediction NOT used: this opponent does not adapt'
+      : hot ? '⚠ COUNTER ARMED' : `below ${pct(thr)} threshold: not countering`;
+    text(status, x + 14, yy, 12, L <= 0 ? '#b0b0b0' : hot ? '#ff7a6a' : '#a0e8c0', 'left');
+    yy += 15;
+    text(`order-${pr.order} context  ·  ${Math.round(pr.n)} samples`, x + 14, yy, 11, 'rgba(200,210,255,0.6)', 'left');
+  } else {
+    text('gathering data...', x + 14, yy, 15, '#b0b0b0', 'left');
+    yy += 48;
+  }
+  yy += 24;
+  const dT = sumObj(fs.dist) || 1, weak = ai.weak || weakestRange();
+  text(`RANGE  close ${pct(fs.dist.close / dT)} · mid ${pct(fs.dist.mid / dT)} · far ${pct(fs.dist.far / dT)}`, x + 14, yy, 12, '#e8e0ff', 'left');
+  yy += 18;
+  text('WEAKEST RANGE: ' + (weak ? weak.toUpperCase() : '?'), x + 14, yy, 12, '#ffd27a', 'left');
+  text(`READ ACCURACY: ${fs.predTotal ? pct(fs.predCorrect / fs.predTotal) : '-'} (${fs.predCorrect}/${fs.predTotal})`, x + w - 14, yy, 12, '#e8e0ff', 'right');
+  yy += 18;
+  const pun = fs.punished, punTxt = Object.keys(pun).map(k => `${LABEL[k].toLowerCase()} ${pun[k]}`).join(', ');
+  text('COUNTERS LANDED: ' + sumObj(pun) + (punTxt ? `  (${punTxt})` : ''), x + 14, yy, 12, '#ff9a8a', 'left');
+  yy += 22;
+  text('STRATEGY', x + 14, yy, 12, '#9fb2ff', 'left');
+  wrapText(ai.strategy, x + 14, yy + 18, w - 28, 16, 13, '#ffffff');
+  ctx.restore();
 }
 
 function renderBattle() {
@@ -1710,7 +2174,9 @@ function renderBattle() {
   drawParticles();
   drawPopups();
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
-  drawHUD();
+  if (game.state !== 'end') drawHUD();
+  if (save.vision && game.state !== 'end') drawVision();
+  if (game.state === 'fight' || game.state === 'ko') drawAiMsg();
   drawBattleOverlay();
 
   if (paused) {
@@ -1758,6 +2224,11 @@ function renderMenu() {
   ctx.save(); ctx.lineWidth = 4; ctx.strokeStyle = '#000';
   ctx.font = `20px ${FONT}`; ctx.textAlign = 'center';
   ctx.strokeText(best, W / 2 + 40, 545); ctx.fillStyle = '#ffd27a'; ctx.fillText(best, W / 2 + 40, 545);
+  if (model.life.fights) {
+    const mem = `ADAPTIVE AI MEMORY:  ${model.life.fights} fight${model.life.fights > 1 ? 's' : ''} of your style analysed`;
+    ctx.font = `16px ${FONT}`;
+    ctx.strokeText(mem, W / 2 + 40, 578); ctx.fillStyle = '#d6a6ff'; ctx.fillText(mem, W / 2 + 40, 578);
+  }
   ctx.restore();
   text('W / S or mouse to choose   ·   ENTER to select   ·   M sound on/off', W / 2, H - 24, 16, 'rgba(244,230,200,0.6)');
 }
@@ -1783,9 +2254,10 @@ function renderControls() {
     ['U  (bar full)', 'SHADOW STRIKE: unblockable glowing dash'],
     ['P / Esc', 'Pause'],
     ['M', 'Sound on / off'],
+    ['I', 'Toggle AI Vision (see what the adaptive AI has learned)'],
   ];
   rows.forEach(([k, d], i) => {
-    const y = 180 + i * 34;
+    const y = 170 + i * 31;
     text(k, 545, y, 22, '#ffd27a', 'right');
     text(d, 575, y, 20, '#f4e6c8', 'left');
   });
